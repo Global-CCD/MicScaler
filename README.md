@@ -1,14 +1,21 @@
 # MicScaler
 
-MicScaler is a lightweight, single-page web application designed to demonstrate the strict mathematical scaling of live microphone data streams. 
+MicScaler is a lightweight, single-page web application designed to demonstrate the strict mathematical scaling of live microphone data streams across up to 50 concurrent tracks.
 
-Unlike standard audio mixing concepts (where Gain is pre-processing signal strength and Volume is post-processing balancing), **MicScaler treats audio as pure data**. It isolates the process of shrinking and expanding data ranges using multiplicative mathematics ($x$).
+Unlike standard audio mixing concepts (where Gain is pre-processing signal strength and Volume is post-processing balancing), **MicScaler treats audio as pure data**. It isolates the process of shrinking and expanding data ranges using high-precision multiplicative mathematics ($x$).
 
 ## 🚀 Quick Start
 1. Clone this repository or download `index.html`.
-2. Open `index.html` in any modern web browser (Chrome, Firefox, Safari).
-3. Click **Start Microphone** and allow browser permissions.
-4. Speak into your microphone and adjust the scaling sliders per track.
+2. Open `index.html` in any modern web browser.
+3. Select your desired number of tracks (1 to 50).
+4. *(Mobile Users)*: Select your audio routing via the **Mobile Earpiece Mode** toggle.
+5. Click **Start Microphone** and allow browser permissions.
+6. Alter the text input boxes to adjust the scaling percentage per track.
+
+## 📱 Mobile Audio Routing Explained (Earpiece vs Spotify Speaker)
+Mobile browsers (Safari/Chrome on iOS/Android) aggressively hijack audio routing when the microphone is turned on. By default, they assume you are making a phone call and route all output to the **Earpiece** to prevent echo. 
+*   **To output to the main Loudspeaker (like Spotify):** Uncheck "Mobile Earpiece Mode" (This disables OS-level echo cancellation and tricks the phone into media mode).
+*   **To output to the Earpiece (like a phone call):** Check "Mobile Earpiece Mode".
 
 ## 🧮 The Math Logic
 This app strictly adheres to the following definitions for processing:
@@ -22,39 +29,20 @@ The app grabs the raw floating-point time-domain data of your microphone (`-1.0`
 For every track, the app runs the following equation:
 `ScaledValue = RawInput * (TrackPercentage / 100)`
 
-If the raw input is `0.5` and Track 1 is set to `5%`:
-`0.5 * 0.05 = 0.025` (The data range is mathematically shrunken).
+If the raw input is `0.5` and Track 1 is typed as `0.05%`:
+`0.5 * 0.0005 = 0.00025` (The data range is mathematically shrunken).
+
+## ✨ Features
+*   **Zero-Dependency Architecture:** A pure Vanilla HTML/CSS/JavaScript single-page app.
+*   **Massive Dynamic Multi-Tracking:** Spawn between 1 and **50 concurrent tracks** dynamically on the fly.
+*   **Precision Text-Input Control:** Each track features a direct numerical text input box allowing you to define the exact multiplication scale, supporting 2 decimal places (e.g., `0.01%`).
+*   **Programmatic Default Sequencing:** Auto-populates an ascending fractional scale sequence for newly generated tracks (`0.01, 0.02, 0.03... 0.1... 1.0... up to 5.0%`).
+*   **Algorithmic Sequence Continuation:** If tracks are spawned beyond the base preset of Track 23 (5.0%), the app automatically calculates a continuous `+1.0%` stepping sequence for the remainder of the tracks (Track 24 = 6.0%, Track 25 = 7.0%... up to Track 50 = 32.0%).
+*   **Hardware Audio Routing Bypass:** Features a WebRTC constraint override to force mobile devices to route audio to the main loudspeaker (Spotify mode) instead of defaulting to the VoIP Earpiece.
+*   **Live Microphone Capture:** Utilizes the Web Audio API to capture raw, uncompressed floating-point audio data.
+*   **Real-Time Data Visualization:** Individual HTML5 Canvas oscilloscopes for every track, rendering the mathematically scaled output at 60fps.
+*   **Feedback Prevention Toggle:** A master UI toggle that allows users to test their mathematical processing by optionally passing the audio to the speakers.
 
 ## ⚠️ Requirements
 *   A working microphone.
 *   Must be run on `localhost` or an `https` connection, as browsers block microphone access on unsecure `http` connections.
-```
-
----
-
-### 3. List of Features
-
-*   **Zero-Dependency Architecture:** A pure Vanilla HTML/CSS/JavaScript single-page app. No Node.js, React, or Webpack required.
-*   **Live Microphone Capture:** Utilizes the Web Audio API (`AnalyserNode` and `FloatTimeDomainData`) to capture raw, uncompressed floating-point audio data.
-*   **Dynamic Multi-Tracking:** Spawn between 1 and 10 concurrent tracks dynamically on the fly without interrupting the data stream.
-*   **Independent Multiplicative Scaling:** Each track possesses a discrete slider to mathematically shrink or expand the incoming data stream range via multiplication (1% to 100%).
-*   **Real-Time Data Visualization:** Individual HTML5 Canvas oscilloscopes for every track, rendering the mathematically scaled output at 60fps so you can visually verify the range shrinking/expanding.
-*   **Feedback Prevention:** Audio data is routed exclusively to the math/visualization engine and is intentionally *not* connected to the speaker destination to prevent audio feedback loops.
-
----
-
-### 4. Roadmap of Future Features
-
-**Phase 1: Advanced Data Manipulation**
-*   **Offset Integration (+):** Add an "Offset" slider to each track to fulfill the final logic tier: shifting the baseline via Constant Addition (e.g., `(RawInput * Scale) + Offset`).
-*   **Inverted Scaling:** Allow negative scaling percentages (e.g., -5%) to invert the phase/data polarity while shrinking/expanding.
-*   **Max/Min Clamping:** Introduce hard mathematical limits to clip the data if it exceeds user-defined thresholds after scaling is applied.
-
-**Phase 2: Data Output & Routing**
-*   **WebSockets/OSC Export:** Broadcast the scaled data streams over Localhost to control external software (like TouchDesigner, Resolume, or Max/MSP).
-*   **Web MIDI API Integration:** Convert the scaled, multi-track data into continuous MIDI Control Change (CC) messages to drive DAW parameters (e.g., Track 1 controls filter cutoff, Track 2 controls reverb decay).
-
-**Phase 3: Audio Functionality**
-*   **AudioWorklet Implementation:** Transition the math logic from the main thread UI visualizer to an `AudioWorkletProcessor` to allow sample-accurate scaling for actual audio rendering.
-*   **Data Recording:** Ability to record the scaled data tracks and export them as a multi-channel `.wav` file or a `.csv` file for data-science applications. 
-*   **Input Selection:** A dropdown menu to select specific audio interfaces and inputs, rather than defaulting to the system's primary microphone.
