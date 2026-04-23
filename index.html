@@ -39,7 +39,7 @@
             gap: 20px;
             align-items: center;
             justify-content: center;
-            max-width: 900px;
+            max-width: 1000px;
         }
         .control-group {
             display: flex;
@@ -68,7 +68,7 @@
 
         #track-container {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
             gap: 20px;
             width: 100%;
             max-width: 1400px;
@@ -84,6 +84,19 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 10px;
+        }
+        .track-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .invert-toggle {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.85em;
+            color: #aaa;
+            cursor: pointer;
         }
         .track-input-group {
             display: flex;
@@ -104,7 +117,6 @@
             text-align: right;
             outline: none;
         }
-        /* Remove arrows from number input */
         .track-input-group input::-webkit-outer-spin-button,
         .track-input-group input::-webkit-inner-spin-button {
             -webkit-appearance: none;
@@ -148,6 +160,11 @@
         </div>
 
         <div class="control-group divider">
+            <input type="checkbox" id="master-invert-toggle">
+            <label for="master-invert-toggle" style="color: var(--danger); font-weight: bold;">Master Invert (+/-)</label>
+        </div>
+
+        <div class="control-group divider">
             <input type="checkbox" id="echo-toggle">
             <label for="echo-toggle">Mobile Earpiece Mode <span class="info-text">(Turn OFF for Loudspeaker)</span></label>
         </div>
@@ -175,9 +192,10 @@
         const numTracksInput = document.getElementById('num-tracks');
         const audioOutputToggle = document.getElementById('audio-output-toggle');
         const echoToggle = document.getElementById('echo-toggle');
+        const masterInvertToggle = document.getElementById('master-invert-toggle');
         const trackContainer = document.getElementById('track-container');
 
-        // State array to hold scale percentages for each track
+        // State array to hold scale percentages and polarity for each track
         let tracks = [];
 
         // Base sequence for tracks 1 through 23
@@ -195,39 +213,47 @@
             for (let i = 0; i < num; i++) {
                 let defaultScale;
                 
-                // If within the predefined array, use that
                 if (i < defaultSequence.length) {
                     defaultScale = defaultSequence[i];
-                } 
-                // If beyond track 23, continue increasing by 1.0 (6, 7, 8...)
-                else {
+                } else {
                     defaultScale = 5.0 + (i - defaultSequence.length + 1);
                 }
 
-                tracks.push({ scale: defaultScale });
+                tracks.push({ scale: defaultScale, invert: false });
 
                 const trackDiv = document.createElement('div');
                 trackDiv.className = 'track';
                 trackDiv.innerHTML = `
                     <div class="track-header">
                         <strong>Track ${i + 1}</strong>
-                        <div class="track-input-group">
-                            <input type="number" id="scale-input-${i}" step="0.01" value="${defaultScale}">
-                            <span>%</span>
+                        <div class="track-controls">
+                            <label class="invert-toggle" for="invert-${i}">
+                                <input type="checkbox" id="invert-${i}">
+                                Track Invert (+/-)
+                            </label>
+                            <div class="track-input-group">
+                                <input type="number" id="scale-input-${i}" step="0.01" value="${defaultScale}">
+                                <span>%</span>
+                            </div>
                         </div>
                     </div>
                     <canvas id="canvas-${i}"></canvas>
                 `;
                 trackContainer.appendChild(trackDiv);
 
+                // Event listener for scale input
                 document.getElementById(`scale-input-${i}`).addEventListener('input', (e) => {
                     const val = parseFloat(e.target.value) || 0;
                     tracks[i].scale = val;
                 });
+
+                // Event listener for individual polarity inversion
+                document.getElementById(`invert-${i}`).addEventListener('change', (e) => {
+                    tracks[i].invert = e.target.checked;
+                });
             }
         }
 
-        // Handle Audio Output connection dynamically
         audioOutputToggle.addEventListener('change', (e) => {
             if (!isRunning || !analyser || !audioContext) return;
             if (e.target.checked) {
@@ -237,11 +263,10 @@
             }
         });
 
-        // Restart mic if echo cancellation toggle changes while running
         echoToggle.addEventListener('change', () => {
             if (isRunning) {
-                toggleMic(); // Stop
-                setTimeout(toggleMic, 200); // Restart with new settings
+                toggleMic(); 
+                setTimeout(toggleMic, 200); 
             }
         });
 
@@ -257,8 +282,6 @@
             }
 
             try {
-                // To force Loudspeaker on mobile, echoCancellation MUST be false
-                // To force Earpiece on mobile, echoCancellation MUST be true
                 const useEchoCancellation = echoToggle.checked;
                 
                 const constraints = {
@@ -299,6 +322,8 @@
             animationId = requestAnimationFrame(draw);
             analyser.getFloatTimeDomainData(dataArray);
 
+            const globalPolarity = masterInvertToggle.checked ? -1 : 1;
+
             tracks.forEach((track, index) => {
                 const canvas = document.getElementById(`canvas-${index}`);
                 if (!canvas) return;
@@ -310,7 +335,12 @@
                 ctx.fillStyle = '#000000';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.lineWidth = 1.5;
-                ctx.strokeStyle = '#bb86fc';
+                
+                const trackPolarity = track.invert ? -1 : 1;
+                const netPolarity = globalPolarity * trackPolarity;
+                
+                // Color waveform red if the net math result is inverted
+                ctx.strokeStyle = netPolarity === -1 ? '#cf6679' : '#bb86fc'; 
                 ctx.beginPath();
 
                 const sliceWidth = canvas.width / dataArray.length;
@@ -320,7 +350,10 @@
 
                 for (let i = 0; i < dataArray.length; i++) {
                     const rawInput = dataArray[i]; // -1.0 to 1.0
-                    const scaledData = rawInput * scaleMultiplier;
+                    
+                    // The core math: Input * Scale * TrackPolarity * GlobalPolarity
+                    const scaledData = rawInput * scaleMultiplier * netPolarity;
+                    
                     const y = (scaledData * (canvas.height / 2)) + (canvas.height / 2);
 
                     if (i === 0) {
@@ -341,4 +374,4 @@
         initTracks();
     </script>
 </body>
-</html>
+    </html>
