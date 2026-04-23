@@ -3,131 +3,439 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MicScaler - 100 Track Math Engine</title>
+    <title>MicScaler - 500 Track Data Range Multiplier</title>
     <style>
         :root {
-            --bg: #121212; --surface: #1e1e1e; --primary: #bb86fc;
-            --danger: #cf6679; --info: #03dac6; --text: #e0e0e0; --border: #333;
+            --bg: #121212;
+            --surface: #1e1e1e;
+            --primary: #bb86fc;
+            --danger: #cf6679;
+            --info: #03dac6;
+            --text: #e0e0e0;
+            --border: #333;
         }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .header { text-align: center; margin-bottom: 20px; }
-        .controls { background: var(--surface); padding: 20px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; justify-content: center; max-width: 1200px; }
-        .control-group { display: flex; align-items: center; gap: 10px; }
-        .divider { border-left: 1px solid #444; padding-left: 15px; }
-        button { background-color: var(--primary); color: #000; border: none; padding: 10px 15px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .controls {
+            background: var(--surface);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: center;
+            justify-content: center;
+            max-width: 1200px;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .divider {
+            border-left: 1px solid #444; 
+            padding-left: 20px;
+        }
+        button {
+            background-color: var(--primary);
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover { opacity: 0.8; }
         button.active { background-color: var(--danger); }
-        #diag-btn { background-color: var(--info); }
-        #track-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; width: 100%; max-width: 1400px; }
-        .track { background: var(--surface); padding: 15px; border-radius: 8px; border: 1px solid var(--border); }
-        .track-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .track-controls { display: flex; align-items: center; gap: 15px; }
-        .invert-toggle { font-size: 0.85em; color: #aaa; cursor: pointer; }
-        .track-input-group { background: #2a2a2a; padding: 5px 10px; border-radius: 4px; border: 1px solid #444; display: flex; align-items: center; }
-        .track-input-group input { width: 60px; background: transparent; color: var(--primary); border: none; font-weight: bold; text-align: right; }
-        canvas { width: 100%; height: 70px; background: #000; border-radius: 4px; margin-top: 10px; }
+        
+        .warning-text { color: var(--danger); font-size: 0.85em; margin-left: 5px; }
+        .info-text { color: var(--info); font-size: 0.85em; margin-left: 5px; }
+
+        #track-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            width: 100%;
+            max-width: 1600px;
+        }
+        .track {
+            background: var(--surface);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .track-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .track-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .invert-toggle {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.85em;
+            color: #aaa;
+            cursor: pointer;
+        }
+        .track-input-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: #2a2a2a;
+            padding: 5px 10px;
+            border-radius: 4px;
+            border: 1px solid #444;
+        }
+        .track-input-group input {
+            width: 80px;
+            background: transparent;
+            color: var(--primary);
+            border: none;
+            font-size: 1.1em;
+            font-weight: bold;
+            text-align: right;
+            outline: none;
+        }
+        .track-input-group input::-webkit-outer-spin-button,
+        .track-input-group input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        .track-input-group input[type=number] {
+            -moz-appearance: textfield;
+        }
+        
+        canvas {
+            width: 100%;
+            height: 80px;
+            background: #000;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        
+        #num-tracks { 
+            width: 60px; 
+            padding: 4px; 
+            background: #333; 
+            color: white; 
+            border: 1px solid #555; 
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
 
-<div class="header">
-    <h1>MicScaler</h1>
-    <p>Mathematical Multiplicative Scaling Engine (100 Tracks)</p>
-</div>
-
-<div class="controls">
-    <button id="mic-btn">Start Microphone</button>
-    <button id="diag-btn">Enable Diagnostic Test</button>
-    <div class="control-group divider">
-        <label>Tracks: </label>
-        <input type="number" id="num-tracks" min="1" max="100" value="25" style="width: 50px;">
+    <div class="header">
+        <h1>MicScaler</h1>
+        <p>Mathematical Multiplicative Scaling (x) of Raw Mic Data</p>
     </div>
-    <div class="control-group divider">
-        <input type="checkbox" id="master-invert-toggle"><label>Master Invert</label>
-        <input type="checkbox" id="alternate-invert-toggle"><label>Alternate Invert</label>
+
+    <div class="controls">
+        <button id="mic-btn">Start Microphone</button>
+        
+        <div class="control-group">
+            <label for="num-tracks">Tracks (1-500): </label>
+            <input type="number" id="num-tracks" min="1" max="500" value="25">
+        </div>
+
+        <div class="control-group divider">
+            <input type="checkbox" id="master-invert-toggle">
+            <label for="master-invert-toggle" style="color: var(--danger); font-weight: bold;">Master Invert (+/-)</label>
+        </div>
+
+        <div class="control-group divider">
+            <label for="step-size" title="Adds this % to each track sequentially">Step (+%): </label>
+            <!-- Adjusted step and default value to 0.001 -->
+            <input type="number" id="step-size" step="0.001" value="0.001" style="width: 75px; padding: 4px; background: #333; color: white; border: 1px solid #555; border-radius: 4px;">
+            <button id="apply-step-btn" style="padding: 6px 12px; font-size: 0.85em; background-color: var(--info);">Apply Step</button>
+        </div>
+
+        <div class="control-group divider">
+            <input type="checkbox" id="echo-toggle">
+            <label for="echo-toggle">Mobile Earpiece Mode <span class="info-text">(Turn OFF for Loudspeaker)</span></label>
+        </div>
+
+        <div class="control-group divider">
+            <input type="checkbox" id="audio-output-toggle">
+            <label for="audio-output-toggle">Speaker Output <span class="warning-text">(Feedback risk!)</span></label>
+        </div>
     </div>
-    <div class="control-group divider">
-        <input type="checkbox" id="echo-toggle"><label>Earpiece Mode</label>
-        <input type="checkbox" id="audio-output-toggle"><label>Speaker Out</label>
+
+    <div id="track-container">
+        <!-- Tracks generated via JS -->
     </div>
-</div>
 
-<div id="track-container"></div>
+    <script>
+        let audioContext;
+        let analyser;
+        let microphone;
+        let stream;
+        let dataArray;
+        let isRunning = false;
+        let animationId;
 
-<script>
-    let audioContext, analyser, microphone, stream, dataArray, isRunning = false, animationId, testMode = false;
-    const tracks = [];
-    const defaultSeq = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 2.0, 3.0, 4.0, 5.0];
+        const micBtn = document.getElementById('mic-btn');
+        const numTracksInput = document.getElementById('num-tracks');
+        const audioOutputToggle = document.getElementById('audio-output-toggle');
+        const echoToggle = document.getElementById('echo-toggle');
+        const masterInvertToggle = document.getElementById('master-invert-toggle');
+        const applyStepBtn = document.getElementById('apply-step-btn');
+        const stepSizeInput = document.getElementById('step-size');
+        const trackContainer = document.getElementById('track-container');
 
-    function initTracks() {
-        const num = Math.min(100, Math.max(1, parseInt(document.getElementById('num-tracks').value)));
-        const container = document.getElementById('track-container');
-        container.innerHTML = ''; tracks.length = 0;
-        for (let i = 0; i < num; i++) {
-            let scale = i < defaultSeq.length ? defaultSeq[i] : 5.0 + (i - defaultSeq.length + 1);
-            tracks.push({ scale, invert: false });
-            const div = document.createElement('div');
-            div.className = 'track';
-            div.innerHTML = `<div class="track-header"><strong>Track ${i+1}</strong>
-                <div class="track-controls">
-                    <label class="invert-toggle"><input type="checkbox" id="inv-${i}"> Invert</label>
-                    <div class="track-input-group"><input type="number" id="sc-${i}" value="${scale}" step="0.01"><span>%</span></div>
-                </div></div><canvas id="can-${i}"></canvas>`;
-            container.appendChild(div);
-            document.getElementById(`sc-${i}`).oninput = (e) => tracks[i].scale = parseFloat(e.target.value);
-            document.getElementById(`inv-${i}`).onchange = (e) => tracks[i].invert = e.target.checked;
-        }
-    }
+        // State array to hold scale percentages, polarity, and cached elements
+        let tracks = [];
 
-    document.getElementById('diag-btn').onclick = (e) => {
-        testMode = !testMode;
-        e.target.innerText = testMode ? 'Disable Diagnostic Test' : 'Enable Diagnostic Test';
-        e.target.classList.toggle('active');
-    };
-
-    function draw() {
-        if (!isRunning) return;
-        animationId = requestAnimationFrame(draw);
-        if (testMode) {
-            for (let i = 0; i < dataArray.length; i++) dataArray[i] = Math.sin(2 * Math.PI * 10 * (i / 44100));
-        } else {
-            analyser.getFloatTimeDomainData(dataArray);
-        }
-
-        const globalInv = document.getElementById('master-invert-toggle').checked ? -1 : 1;
-        const altInv = document.getElementById('alternate-invert-toggle').checked;
-
-        tracks.forEach((track, idx) => {
-            const canvas = document.getElementById(`can-${idx}`);
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            const netPol = globalInv * (track.invert ? -1 : 1) * (altInv && (idx % 2 !== 0) ? -1 : 1);
-            ctx.strokeStyle = netPol === -1 ? '#cf6679' : '#bb86fc';
-            ctx.beginPath();
-            
-            const scale = track.scale / 100;
-            for (let i = 0; i < dataArray.length; i++) {
-                const y = ((dataArray[i] * scale * netPol) * (canvas.height/2)) + (canvas.height/2);
-                i === 0 ? ctx.moveTo(0, y) : ctx.lineTo(i * (canvas.width/dataArray.length), y);
+        // Performance Optimization: ResizeObserver prevents DOM layout thrashing during the 60fps loop
+        const canvasResizeObserver = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                const canvas = entry.target;
+                // Update the internal resolution of the canvas to match its physical CSS size
+                canvas.width = entry.contentRect.width;
+                canvas.height = entry.contentRect.height;
+                
+                // Keep a cached reference of the height inside the track object to avoid DOM reads in the render loop
+                const trackIndex = canvas.dataset.index;
+                if (tracks[trackIndex]) {
+                    tracks[trackIndex].heightHalf = canvas.height / 2;
+                    tracks[trackIndex].width = canvas.width;
+                }
             }
-            ctx.stroke();
-            if(testMode) { ctx.fillStyle = '#03dac6'; ctx.fillText(`NetPol: ${netPol}`, 5, 15); }
         });
-    }
 
-    document.getElementById('mic-btn').onclick = async () => {
-        if (isRunning) { window.location.reload(); return; }
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: !document.getElementById('echo-toggle').checked } });
-        audioContext = new AudioContext(); analyser = audioContext.createAnalyser();
-        analyser.fftSize = 2048; dataArray = new Float32Array(analyser.frequencyBinCount);
-        audioContext.createMediaStreamSource(stream).connect(analyser);
-        if(document.getElementById('audio-output-toggle').checked) analyser.connect(audioContext.destination);
-        isRunning = true; draw(); document.getElementById('mic-btn').innerText = 'Stop';
-    };
+        // Base sequence for tracks 1 through 23
+        const defaultSequence = [
+            0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 
+            0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 
+            1.0, 2.0, 3.0, 4.0, 5.0
+        ];
 
-    document.getElementById('num-tracks').onchange = initTracks;
-    initTracks();
-</script>
+        function initTracks() {
+            // Increased Max to 500
+            const num = Math.min(500, Math.max(1, parseInt(numTracksInput.value)));
+            
+            // Clean up old observers
+            canvasResizeObserver.disconnect();
+            trackContainer.innerHTML = '';
+            tracks = [];
+
+            for (let i = 0; i < num; i++) {
+                let defaultScale;
+                
+                if (i < defaultSequence.length) {
+                    defaultScale = defaultSequence[i];
+                } else {
+                    defaultScale = 5.0 + (i - defaultSequence.length + 1);
+                }
+
+                const trackDiv = document.createElement('div');
+                trackDiv.className = 'track';
+                trackDiv.innerHTML = `
+                    <div class="track-header">
+                        <strong>Track ${i + 1}</strong>
+                        <div class="track-controls">
+                            <label class="invert-toggle" for="invert-${i}">
+                                <input type="checkbox" id="invert-${i}">
+                                Track Invert (+/-)
+                            </label>
+                            <div class="track-input-group">
+                                <!-- Step updated to 0.001 -->
+                                <input type="number" id="scale-input-${i}" step="0.001" value="${defaultScale}">
+                                <span>%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <canvas id="canvas-${i}" data-index="${i}"></canvas>
+                `;
+                trackContainer.appendChild(trackDiv);
+
+                // Cache Canvas and Context for 60fps performance
+                const canvasEl = document.getElementById(`canvas-${i}`);
+                const ctxEl = canvasEl.getContext('2d', { alpha: false }); // alpha: false drastically optimizes drawing speed
+                
+                canvasResizeObserver.observe(canvasEl);
+
+                tracks.push({ 
+                    scale: defaultScale, 
+                    invert: false,
+                    canvas: canvasEl,
+                    ctx: ctxEl,
+                    width: 0,         // Populated by ResizeObserver
+                    heightHalf: 0     // Populated by ResizeObserver
+                });
+
+                // Event listener for scale input
+                document.getElementById(`scale-input-${i}`).addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    tracks[i].scale = val;
+                });
+
+                // Event listener for individual polarity inversion
+                document.getElementById(`invert-${i}`).addEventListener('change', (e) => {
+                    tracks[i].invert = e.target.checked;
+                });
+            }
+        }
+
+        // Apply sequential steps to all 500 tracks using 3 decimal places (0.001)
+        applyStepBtn.addEventListener('click', () => {
+            if (tracks.length === 0) return;
+            
+            const stepValue = parseFloat(stepSizeInput.value) || 0;
+            const baseScale = tracks[0].scale; 
+            
+            tracks.forEach((track, i) => {
+                // Fixed to 3 decimal places to support 0.001 precision without JS floating-point artifacts
+                const newScale = Number((baseScale + (i * stepValue)).toFixed(3));
+                track.scale = newScale;
+                
+                const inputEl = document.getElementById(`scale-input-${i}`);
+                if (inputEl) {
+                    inputEl.value = newScale;
+                }
+            });
+        });
+
+        audioOutputToggle.addEventListener('change', (e) => {
+            if (!isRunning || !analyser || !audioContext) return;
+            if (e.target.checked) {
+                analyser.connect(audioContext.destination);
+            } else {
+                analyser.disconnect(audioContext.destination);
+            }
+        });
+
+        echoToggle.addEventListener('change', () => {
+            if (isRunning) {
+                toggleMic(); 
+                setTimeout(toggleMic, 200); 
+            }
+        });
+
+        async function toggleMic() {
+            if (isRunning) {
+                cancelAnimationFrame(animationId);
+                if (stream) stream.getTracks().forEach(track => track.stop());
+                if (audioContext) audioContext.close();
+                micBtn.innerText = 'Start Microphone';
+                micBtn.classList.remove('active');
+                isRunning = false;
+                return;
+            }
+
+            try {
+                const useEchoCancellation = echoToggle.checked;
+                
+                const constraints = {
+                    audio: {
+                        echoCancellation: useEchoCancellation,
+                        noiseSuppression: useEchoCancellation,
+                        autoGainControl: useEchoCancellation
+                    }
+                };
+
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                
+                // FFT Size 1024 generates 512 data points. 
+                // 512 points * 500 tracks = 256,000 math operations per frame (Extremely fast)
+                analyser.fftSize = 1024;
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Float32Array(bufferLength);
+                
+                microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+                
+                if (audioOutputToggle.checked) {
+                    analyser.connect(audioContext.destination);
+                }
+
+                micBtn.innerText = 'Stop Microphone';
+                micBtn.classList.add('active');
+                isRunning = true;
+
+                draw();
+            } catch (err) {
+                alert('Error accessing microphone: ' + err);
+            }
+        }
+
+        // Maximum Performance Rendering Loop
+        function draw() {
+            if (!isRunning) return;
+            animationId = requestAnimationFrame(draw);
+            analyser.getFloatTimeDomainData(dataArray);
+
+            const globalPolarity = masterInvertToggle.checked ? -1 : 1;
+            const dataLength = dataArray.length;
+
+            for (let t = 0; t < tracks.length; t++) {
+                const track = tracks[t];
+                
+                // Skip if ResizeObserver hasn't fired yet
+                if (track.width === 0) continue; 
+
+                const ctx = track.ctx;
+                
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, track.width, track.heightHalf * 2);
+                ctx.lineWidth = 1.5;
+                
+                const trackPolarity = track.invert ? -1 : 1;
+                const netPolarity = globalPolarity * trackPolarity;
+                
+                ctx.strokeStyle = netPolarity === -1 ? '#cf6679' : '#bb86fc'; 
+                ctx.beginPath();
+
+                const sliceWidth = track.width / dataLength;
+                let x = 0;
+
+                const scaleMultiplier = track.scale / 100;
+                const heightHalf = track.heightHalf;
+
+                // High-performance geometry calculation
+                for (let i = 0; i < dataLength; i++) {
+                    const scaledData = dataArray[i] * scaleMultiplier * netPolarity;
+                    const y = (scaledData * heightHalf) + heightHalf;
+
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                    x += sliceWidth;
+                }
+                ctx.stroke();
+            }
+        }
+
+        numTracksInput.addEventListener('change', initTracks);
+        micBtn.addEventListener('click', toggleMic);
+
+        // Initialize UI
+        initTracks();
+    </script>
 </body>
 </html>
