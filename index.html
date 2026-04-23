@@ -9,6 +9,7 @@
             --bg: #121212;
             --surface: #1e1e1e;
             --primary: #bb86fc;
+            --danger: #cf6679;
             --text: #e0e0e0;
             --border: #333;
         }
@@ -33,8 +34,16 @@
             border: 1px solid var(--border);
             margin-bottom: 20px;
             display: flex;
+            flex-wrap: wrap;
             gap: 20px;
             align-items: center;
+            justify-content: center;
+            max-width: 800px;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
         button {
             background-color: var(--primary);
@@ -44,17 +53,19 @@
             border-radius: 4px;
             font-weight: bold;
             cursor: pointer;
-            transition: opacity 0.2s;
+            transition: background-color 0.2s;
         }
         button:hover { opacity: 0.8; }
-        button.active { background-color: #cf6679; }
+        button.active { background-color: var(--danger); }
         
+        .warning-text { color: var(--danger); font-size: 0.85em; margin-left: 5px; }
+
         #track-container {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 20px;
             width: 100%;
-            max-width: 1200px;
+            max-width: 1400px;
         }
         .track {
             background: var(--surface);
@@ -70,12 +81,13 @@
         }
         canvas {
             width: 100%;
-            height: 100px;
+            height: 80px;
             background: #000;
             border-radius: 4px;
             margin-top: 10px;
         }
         input[type="range"] { width: 100%; }
+        input[type="number"] { width: 60px; padding: 4px; background: #333; color: white; border: 1px solid #555; }
     </style>
 </head>
 <body>
@@ -87,9 +99,15 @@
 
     <div class="controls">
         <button id="mic-btn">Start Microphone</button>
-        <div>
-            <label for="num-tracks">Number of Tracks (1-10): </label>
-            <input type="number" id="num-tracks" min="1" max="10" value="2">
+        
+        <div class="control-group">
+            <label for="num-tracks">Tracks (1-50): </label>
+            <input type="number" id="num-tracks" min="1" max="50" value="2">
+        </div>
+
+        <div class="control-group" style="border-left: 1px solid #444; padding-left: 20px;">
+            <input type="checkbox" id="audio-output-toggle">
+            <label for="audio-output-toggle">Enable Speaker Output <span class="warning-text">(Warning: Feedback loop risk!)</span></label>
         </div>
     </div>
 
@@ -107,20 +125,21 @@
 
         const micBtn = document.getElementById('mic-btn');
         const numTracksInput = document.getElementById('num-tracks');
+        const audioOutputToggle = document.getElementById('audio-output-toggle');
         const trackContainer = document.getElementById('track-container');
 
         // State array to hold scale percentages for each track
         let tracks = [];
 
         function initTracks() {
-            const num = Math.min(10, Math.max(1, parseInt(numTracksInput.value)));
+            const num = Math.min(50, Math.max(1, parseInt(numTracksInput.value)));
             trackContainer.innerHTML = '';
             tracks = [];
 
             for (let i = 0; i < num; i++) {
-                // Default percentages: 5%, 4%, etc.
-                const defaultScale = Math.max(1, 5 - i); 
-                tracks.push({ scale: defaultScale });
+                // Default percentages: 5.00%, 4.00%, etc. Bottom out at 0.01%
+                const defaultScale = Math.max(0.01, 5 - i).toFixed(2); 
+                tracks.push({ scale: parseFloat(defaultScale) });
 
                 const trackDiv = document.createElement('div');
                 trackDiv.className = 'track';
@@ -129,18 +148,30 @@
                         <strong>Track ${i + 1}</strong>
                         <span id="val-${i}">${defaultScale}%</span>
                     </div>
-                    <input type="range" id="slider-${i}" min="0" max="100" value="${defaultScale}">
+                    <input type="range" id="slider-${i}" min="0.00" max="100.00" step="0.01" value="${defaultScale}">
                     <canvas id="canvas-${i}"></canvas>
                 `;
                 trackContainer.appendChild(trackDiv);
 
                 // Event listener for sliders
                 document.getElementById(`slider-${i}`).addEventListener('input', (e) => {
-                    tracks[i].scale = parseFloat(e.target.value);
-                    document.getElementById(`val-${i}`).innerText = `${e.target.value}%`;
+                    const val = parseFloat(e.target.value);
+                    tracks[i].scale = val;
+                    document.getElementById(`val-${i}`).innerText = `${val.toFixed(2)}%`;
                 });
             }
         }
+
+        // Handle Audio Output connection dynamically
+        audioOutputToggle.addEventListener('change', (e) => {
+            if (!isRunning || !analyser || !audioContext) return;
+            
+            if (e.target.checked) {
+                analyser.connect(audioContext.destination);
+            } else {
+                analyser.disconnect(audioContext.destination);
+            }
+        });
 
         async function toggleMic() {
             if (isRunning) {
@@ -164,7 +195,11 @@
                 
                 microphone = audioContext.createMediaStreamSource(stream);
                 microphone.connect(analyser);
-                // Note: Not connecting to destination (speakers) to prevent feedback loop
+                
+                // Connect to destination if user checked the box
+                if (audioOutputToggle.checked) {
+                    analyser.connect(audioContext.destination);
+                }
 
                 micBtn.innerText = 'Stop Microphone';
                 micBtn.classList.add('active');
@@ -186,13 +221,12 @@
                 if (!canvas) return;
                 const ctx = canvas.getContext('2d');
                 
-                // Resize internal canvas resolution to match display
                 canvas.width = canvas.clientWidth;
                 canvas.height = canvas.clientHeight;
 
                 ctx.fillStyle = '#000000';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.lineWidth = 2;
+                ctx.lineWidth = 1.5;
                 ctx.strokeStyle = '#bb86fc';
                 ctx.beginPath();
 
@@ -204,13 +238,12 @@
                 const scaleMultiplier = track.scale / 100;
 
                 for (let i = 0; i < dataArray.length; i++) {
-                    // Raw input is between -1.0 and 1.0
-                    const rawInput = dataArray[i]; 
+                    const rawInput = dataArray[i]; // -1.0 to 1.0
                     
-                    // Apply the scale (multiplicative shrinking/expanding)
+                    // Apply multiplicative scaling
                     const scaledData = rawInput * scaleMultiplier;
 
-                    // Map to canvas coordinates (center is height/2)
+                    // Map to canvas coordinates
                     const y = (scaledData * (canvas.height / 2)) + (canvas.height / 2);
 
                     if (i === 0) {
