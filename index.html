@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MicScaler - Data Range Multiplier</title>
+    <style>
+        :root {
+            --bg: #121212;
+            --surface: #1e1e1e;
+            --primary: #bb86fc;
+            --text: #e0e0e0;
+            --border: #333;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .controls {
+            background: var(--surface);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        button {
+            background-color: var(--primary);
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.8; }
+        button.active { background-color: #cf6679; }
+        
+        #track-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            width: 100%;
+            max-width: 1200px;
+        }
+        .track {
+            background: var(--surface);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .track-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        canvas {
+            width: 100%;
+            height: 100px;
+            background: #000;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        input[type="range"] { width: 100%; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>MicScaler</h1>
+        <p>Mathematical Multiplicative Scaling (x) of Raw Mic Data</p>
+    </div>
+
+    <div class="controls">
+        <button id="mic-btn">Start Microphone</button>
+        <div>
+            <label for="num-tracks">Number of Tracks (1-10): </label>
+            <input type="number" id="num-tracks" min="1" max="10" value="2">
+        </div>
+    </div>
+
+    <div id="track-container">
+        <!-- Tracks generated via JS -->
+    </div>
+
+    <script>
+        let audioContext;
+        let analyser;
+        let microphone;
+        let dataArray;
+        let isRunning = false;
+        let animationId;
+
+        const micBtn = document.getElementById('mic-btn');
+        const numTracksInput = document.getElementById('num-tracks');
+        const trackContainer = document.getElementById('track-container');
+
+        // State array to hold scale percentages for each track
+        let tracks = [];
+
+        function initTracks() {
+            const num = Math.min(10, Math.max(1, parseInt(numTracksInput.value)));
+            trackContainer.innerHTML = '';
+            tracks = [];
+
+            for (let i = 0; i < num; i++) {
+                // Default percentages: 5%, 4%, etc.
+                const defaultScale = Math.max(1, 5 - i); 
+                tracks.push({ scale: defaultScale });
+
+                const trackDiv = document.createElement('div');
+                trackDiv.className = 'track';
+                trackDiv.innerHTML = `
+                    <div class="track-header">
+                        <strong>Track ${i + 1}</strong>
+                        <span id="val-${i}">${defaultScale}%</span>
+                    </div>
+                    <input type="range" id="slider-${i}" min="0" max="100" value="${defaultScale}">
+                    <canvas id="canvas-${i}"></canvas>
+                `;
+                trackContainer.appendChild(trackDiv);
+
+                // Event listener for sliders
+                document.getElementById(`slider-${i}`).addEventListener('input', (e) => {
+                    tracks[i].scale = parseFloat(e.target.value);
+                    document.getElementById(`val-${i}`).innerText = `${e.target.value}%`;
+                });
+            }
+        }
+
+        async function toggleMic() {
+            if (isRunning) {
+                cancelAnimationFrame(animationId);
+                if (audioContext) audioContext.close();
+                micBtn.innerText = 'Start Microphone';
+                micBtn.classList.remove('active');
+                isRunning = false;
+                return;
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                
+                // Get raw floating point data (-1.0 to 1.0)
+                analyser.fftSize = 2048;
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Float32Array(bufferLength);
+                
+                microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+                // Note: Not connecting to destination (speakers) to prevent feedback loop
+
+                micBtn.innerText = 'Stop Microphone';
+                micBtn.classList.add('active');
+                isRunning = true;
+
+                draw();
+            } catch (err) {
+                alert('Error accessing microphone: ' + err);
+            }
+        }
+
+        function draw() {
+            if (!isRunning) return;
+            animationId = requestAnimationFrame(draw);
+            analyser.getFloatTimeDomainData(dataArray);
+
+            tracks.forEach((track, index) => {
+                const canvas = document.getElementById(`canvas-${index}`);
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                
+                // Resize internal canvas resolution to match display
+                canvas.width = canvas.clientWidth;
+                canvas.height = canvas.clientHeight;
+
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#bb86fc';
+                ctx.beginPath();
+
+                const sliceWidth = canvas.width / dataArray.length;
+                let x = 0;
+
+                // MATHEMATICAL SCALING LOGIC
+                // Formula: Output = Input * (ScalePercentage / 100)
+                const scaleMultiplier = track.scale / 100;
+
+                for (let i = 0; i < dataArray.length; i++) {
+                    // Raw input is between -1.0 and 1.0
+                    const rawInput = dataArray[i]; 
+                    
+                    // Apply the scale (multiplicative shrinking/expanding)
+                    const scaledData = rawInput * scaleMultiplier;
+
+                    // Map to canvas coordinates (center is height/2)
+                    const y = (scaledData * (canvas.height / 2)) + (canvas.height / 2);
+
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                    x += sliceWidth;
+                }
+                ctx.stroke();
+            });
+        }
+
+        numTracksInput.addEventListener('change', initTracks);
+        micBtn.addEventListener('click', toggleMic);
+
+        // Initialize UI
+        initTracks();
+    </script>
+</body>
+</html>
