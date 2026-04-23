@@ -4,6 +4,11 @@ MicScaler is a high-precision, single-page web application designed to demonstra
 
 Unlike standard audio mixing concepts (where Gain is pre-processing signal strength and Volume is post-processing balancing), **MicScaler treats audio as pure data**. It isolates the process of shrinking and expanding data ranges using multiplicative mathematics ($x$).
 
+## Demo Links on Cloudflare
+* v1.0.0 - https://v1-2-0-micscaler.pages.dev/
+* v1.1.0 - https://v1-2-0-micscaler.pages.dev/
+* v1.2.0 - https://v1-2-0-micscaler.pages.dev/
+
 ## 🚀 Quick Start
 1. Clone this repository or download `index.html`.
 2. Open `index.html` in any modern web browser.
