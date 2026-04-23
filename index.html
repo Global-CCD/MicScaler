@@ -10,6 +10,7 @@
             --surface: #1e1e1e;
             --primary: #bb86fc;
             --danger: #cf6679;
+            --info: #03dac6;
             --text: #e0e0e0;
             --border: #333;
         }
@@ -38,12 +39,16 @@
             gap: 20px;
             align-items: center;
             justify-content: center;
-            max-width: 800px;
+            max-width: 900px;
         }
         .control-group {
             display: flex;
             align-items: center;
             gap: 10px;
+        }
+        .divider {
+            border-left: 1px solid #444; 
+            padding-left: 20px;
         }
         button {
             background-color: var(--primary);
@@ -59,6 +64,7 @@
         button.active { background-color: var(--danger); }
         
         .warning-text { color: var(--danger); font-size: 0.85em; margin-left: 5px; }
+        .info-text { color: var(--info); font-size: 0.85em; margin-left: 5px; }
 
         #track-container {
             display: grid;
@@ -141,9 +147,14 @@
             <input type="number" id="num-tracks" min="1" max="50" value="23">
         </div>
 
-        <div class="control-group" style="border-left: 1px solid #444; padding-left: 20px;">
+        <div class="control-group divider">
+            <input type="checkbox" id="echo-toggle">
+            <label for="echo-toggle">Mobile Earpiece Mode <span class="info-text">(Turn OFF for Loudspeaker)</span></label>
+        </div>
+
+        <div class="control-group divider">
             <input type="checkbox" id="audio-output-toggle">
-            <label for="audio-output-toggle">Enable Speaker Output <span class="warning-text">(Warning: Feedback loop risk!)</span></label>
+            <label for="audio-output-toggle">Speaker Output <span class="warning-text">(Feedback risk!)</span></label>
         </div>
     </div>
 
@@ -155,6 +166,7 @@
         let audioContext;
         let analyser;
         let microphone;
+        let stream;
         let dataArray;
         let isRunning = false;
         let animationId;
@@ -162,6 +174,7 @@
         const micBtn = document.getElementById('mic-btn');
         const numTracksInput = document.getElementById('num-tracks');
         const audioOutputToggle = document.getElementById('audio-output-toggle');
+        const echoToggle = document.getElementById('echo-toggle');
         const trackContainer = document.getElementById('track-container');
 
         // State array to hold scale percentages for each track
@@ -180,7 +193,6 @@
             tracks = [];
 
             for (let i = 0; i < num; i++) {
-                // Use the sequence value, or default to 5.0 if sequence is exhausted
                 const defaultScale = i < defaultSequence.length ? defaultSequence[i] : 5.0;
                 tracks.push({ scale: defaultScale });
 
@@ -198,9 +210,7 @@
                 `;
                 trackContainer.appendChild(trackDiv);
 
-                // Event listener for the text input box
                 document.getElementById(`scale-input-${i}`).addEventListener('input', (e) => {
-                    // Fallback to 0 if the user deletes all text to prevent NaN errors
                     const val = parseFloat(e.target.value) || 0;
                     tracks[i].scale = val;
                 });
@@ -210,7 +220,6 @@
         // Handle Audio Output connection dynamically
         audioOutputToggle.addEventListener('change', (e) => {
             if (!isRunning || !analyser || !audioContext) return;
-            
             if (e.target.checked) {
                 analyser.connect(audioContext.destination);
             } else {
@@ -218,9 +227,18 @@
             }
         });
 
+        // Restart mic if echo cancellation toggle changes while running
+        echoToggle.addEventListener('change', () => {
+            if (isRunning) {
+                toggleMic(); // Stop
+                setTimeout(toggleMic, 200); // Restart with new settings
+            }
+        });
+
         async function toggleMic() {
             if (isRunning) {
                 cancelAnimationFrame(animationId);
+                if (stream) stream.getTracks().forEach(track => track.stop());
                 if (audioContext) audioContext.close();
                 micBtn.innerText = 'Start Microphone';
                 micBtn.classList.remove('active');
@@ -229,11 +247,22 @@
             }
 
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                // To force Loudspeaker on mobile, echoCancellation MUST be false
+                // To force Earpiece on mobile, echoCancellation MUST be true
+                const useEchoCancellation = echoToggle.checked;
+                
+                const constraints = {
+                    audio: {
+                        echoCancellation: useEchoCancellation,
+                        noiseSuppression: useEchoCancellation,
+                        autoGainControl: useEchoCancellation
+                    }
+                };
+
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 analyser = audioContext.createAnalyser();
                 
-                // Get raw floating point data (-1.0 to 1.0)
                 analyser.fftSize = 2048;
                 const bufferLength = analyser.frequencyBinCount;
                 dataArray = new Float32Array(bufferLength);
@@ -241,7 +270,6 @@
                 microphone = audioContext.createMediaStreamSource(stream);
                 microphone.connect(analyser);
                 
-                // Connect to destination if user checked the box
                 if (audioOutputToggle.checked) {
                     analyser.connect(audioContext.destination);
                 }
@@ -278,17 +306,11 @@
                 const sliceWidth = canvas.width / dataArray.length;
                 let x = 0;
 
-                // MATHEMATICAL SCALING LOGIC
-                // Formula: Output = Input * (ScalePercentage / 100)
                 const scaleMultiplier = track.scale / 100;
 
                 for (let i = 0; i < dataArray.length; i++) {
                     const rawInput = dataArray[i]; // -1.0 to 1.0
-                    
-                    // Apply multiplicative scaling
                     const scaledData = rawInput * scaleMultiplier;
-
-                    // Map to canvas coordinates
                     const y = (scaledData * (canvas.height / 2)) + (canvas.height / 2);
 
                     if (i === 0) {
