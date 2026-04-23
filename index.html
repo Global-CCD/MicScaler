@@ -79,6 +79,35 @@
             align-items: center;
             margin-bottom: 10px;
         }
+        .track-input-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: #2a2a2a;
+            padding: 5px 10px;
+            border-radius: 4px;
+            border: 1px solid #444;
+        }
+        .track-input-group input {
+            width: 70px;
+            background: transparent;
+            color: var(--primary);
+            border: none;
+            font-size: 1.1em;
+            font-weight: bold;
+            text-align: right;
+            outline: none;
+        }
+        /* Remove arrows from number input */
+        .track-input-group input::-webkit-outer-spin-button,
+        .track-input-group input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        .track-input-group input[type=number] {
+            -moz-appearance: textfield;
+        }
+        
         canvas {
             width: 100%;
             height: 80px;
@@ -86,8 +115,15 @@
             border-radius: 4px;
             margin-top: 10px;
         }
-        input[type="range"] { width: 100%; }
-        input[type="number"] { width: 60px; padding: 4px; background: #333; color: white; border: 1px solid #555; }
+        
+        #num-tracks { 
+            width: 60px; 
+            padding: 4px; 
+            background: #333; 
+            color: white; 
+            border: 1px solid #555; 
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
@@ -102,7 +138,7 @@
         
         <div class="control-group">
             <label for="num-tracks">Tracks (1-50): </label>
-            <input type="number" id="num-tracks" min="1" max="50" value="2">
+            <input type="number" id="num-tracks" min="1" max="50" value="23">
         </div>
 
         <div class="control-group" style="border-left: 1px solid #444; padding-left: 20px;">
@@ -131,33 +167,42 @@
         // State array to hold scale percentages for each track
         let tracks = [];
 
+        // Specific default values sequence requested
+        const defaultSequence = [
+            0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 
+            0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 
+            1.0, 2.0, 3.0, 4.0, 5.0
+        ];
+
         function initTracks() {
             const num = Math.min(50, Math.max(1, parseInt(numTracksInput.value)));
             trackContainer.innerHTML = '';
             tracks = [];
 
             for (let i = 0; i < num; i++) {
-                // Default percentages: 5.00%, 4.00%, etc. Bottom out at 0.01%
-                const defaultScale = Math.max(0.01, 5 - i).toFixed(2); 
-                tracks.push({ scale: parseFloat(defaultScale) });
+                // Use the sequence value, or default to 5.0 if sequence is exhausted
+                const defaultScale = i < defaultSequence.length ? defaultSequence[i] : 5.0;
+                tracks.push({ scale: defaultScale });
 
                 const trackDiv = document.createElement('div');
                 trackDiv.className = 'track';
                 trackDiv.innerHTML = `
                     <div class="track-header">
                         <strong>Track ${i + 1}</strong>
-                        <span id="val-${i}">${defaultScale}%</span>
+                        <div class="track-input-group">
+                            <input type="number" id="scale-input-${i}" step="0.01" value="${defaultScale}">
+                            <span>%</span>
+                        </div>
                     </div>
-                    <input type="range" id="slider-${i}" min="0.00" max="100.00" step="0.01" value="${defaultScale}">
                     <canvas id="canvas-${i}"></canvas>
                 `;
                 trackContainer.appendChild(trackDiv);
 
-                // Event listener for sliders
-                document.getElementById(`slider-${i}`).addEventListener('input', (e) => {
-                    const val = parseFloat(e.target.value);
+                // Event listener for the text input box
+                document.getElementById(`scale-input-${i}`).addEventListener('input', (e) => {
+                    // Fallback to 0 if the user deletes all text to prevent NaN errors
+                    const val = parseFloat(e.target.value) || 0;
                     tracks[i].scale = val;
-                    document.getElementById(`val-${i}`).innerText = `${val.toFixed(2)}%`;
                 });
             }
         }
