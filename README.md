@@ -1,6 +1,6 @@
 # MicScaler
 
-MicScaler is a professional-grade, zero-dependency web application designed for high-throughput mathematical processing of live audio data. It isolates the process of signal scaling and inversion, turning your browser into a **1,000-channel mathematical processor**.
+MicScaler is a professional-grade, zero-dependency web application designed for high-throughput mathematical processing of live audio data. It isolates the process of signal scaling, inversion, and microsecond data gating, turning your browser into a **1,000-channel mathematical processor**.
 
 ## Demo Links on Cloudflare
 * v1.0.0 - 
@@ -11,23 +11,25 @@ MicScaler is a professional-grade, zero-dependency web application designed for 
 * v1.5.0 - https://v1-5-0-micscaler.pages.dev/
 
 ## 🚀 Quick Start
-1. Download `index.html`.
-2. Open in any modern web browser.
-3. Set your track count (up to 1,000) and click **Start Microphone**.
-4. Use the **Step (+%)** tool to instantly apply cascading mathematical sequences across the entire array.
+1. Download `index.html` and open in any modern web browser.
+2. Set your track count (up to 1,000).
+3. *(Optional)* Set an **Auto-Toggle (ms)** to chop the signal at high speeds.
+4. Click **Start Microphone**.
+5. Use the **Step (+%)** tool to instantly apply cascading mathematical sequences.
 
-## 🧮 The Math Logic
-Unlike standard audio mixers, MicScaler processes audio as pure floating-point data streams.
-*   **Scale:** Multiplicative range control ($Input \times Scale\%$).
-*   **Net Polarity:** Cascading phase logic ($GlobalMaster \times TrackSpecific$).
-*   **Precision:** Supports scaling inputs down to **0.0001%** precision.
+## ⏱️ Sub-Millisecond Digital Gating (Auto-Toggle)
+Traditional hardware microphones cannot be turned on and off in 0.1 milliseconds without crashing the operating system. MicScaler overcomes this by implementing a **Sample-Accurate Digital Gate**. 
+
+By calculating the passage of time using audio sample rates (e.g., 48,000Hz), the app mathematically "zeros out" the data stream at exact sub-millisecond intervals. 
+*   **0.1ms:** Generates a 10,000Hz Amplitude Modulation effect.
+*   **100ms:** Creates a fast stutter/chopper effect.
+*   **1000ms (1s):** Standard 1-second auto-mute cycle.
 
 ## ✨ Key Features
-*   **1,000-Channel Throughput:** Optimized to perform over 500,000+ multiplicative math operations per animation frame while maintaining 60fps.
-*   **Zero-Canvas Overhead:** By removing individual track visualizers, the app focuses on pure data throughput, drastically reducing GPU/CPU thermal load.
+*   **1,000-Channel Throughput:** Optimized to perform over 500,000+ multiplicative math operations per frame.
+*   **Hyper-Precision:** Supports scaling inputs down to **0.0001%** precision.
 *   **Cascading Logic:** Apply global master inversions or individual track-level phase flips.
-*   **Dynamic Step Progression:** Automatically calculate complex sequences across the entire track array with high-precision (0.0001) step increments.
-*   **Hardware Bypass:** Built-in mobile audio routing controls to prevent OS-level VoIP "Earpiece" hijacking.
+*   **Dynamic Step Progression:** Automatically calculate complex sequences across the entire track array with high-precision step increments.
 
 ## 🗺️ Roadmap: Future Features
 
