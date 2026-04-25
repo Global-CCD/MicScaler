@@ -8,6 +8,7 @@ MicScaler is a professional-grade, zero-dependency web application designed for 
 * v1.2.0 - https://v1-2-0-micscaler.pages.dev/
 * v1.3.0 - https://v1-3-0-micscaler.pages.dev/
 * v1.4.0 - https://v1-4-0-micscaler.pages.dev/
+* v1.5.0 - https://v1-5-0-micscaler.pages.dev/
 
 ## 🚀 Quick Start
 1. Download `index.html`.
