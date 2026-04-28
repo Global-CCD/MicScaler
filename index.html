@@ -47,11 +47,18 @@
     <div class="controls">
         <button id="mic-btn">Start Microphone</button>
         
-        <!-- NEW FEATURE: Auto-Toggle / Digital Gate -->
+        <!-- DATA MATH GATE -->
         <div class="control-group divider" style="border: 1px solid var(--warn); padding: 5px 10px; border-radius: 4px;">
-            <label title="Sample-accurate Start/Stop Chopper" style="color: var(--warn); font-weight:bold;">Auto-Toggle (ms): </label>
+            <label title="Chops the Mathematical Data Array" style="color: var(--warn); font-weight:bold;">Data Gate (ms): </label>
             <input type="number" id="gate-ms" class="ui-num" min="0.1" max="1000" step="0.1" value="100" style="width: 65px;">
-            <input type="checkbox" id="gate-enable-toggle"> <span style="font-size:0.9em;">Enable</span>
+            <input type="checkbox" id="gate-enable-toggle">
+        </div>
+
+        <!-- NEW: PHYSICAL SPEAKER OUTPUT GATE -->
+        <div class="control-group divider" style="border: 1px solid var(--info); padding: 5px 10px; border-radius: 4px;">
+            <label title="Chops the physical Speaker Output audio" style="color: var(--info); font-weight:bold;">Speaker Gate (ms): </label>
+            <input type="number" id="out-gate-ms" class="ui-num" min="0.1" max="1000" step="0.1" value="100" style="width: 65px;">
+            <input type="checkbox" id="out-gate-enable-toggle">
         </div>
 
         <div class="control-group divider">
@@ -61,13 +68,13 @@
 
         <div class="control-group divider">
             <input type="checkbox" id="master-invert-toggle">
-            <label style="color: var(--danger); font-weight: bold;">Master Invert (+/-)</label>
+            <label style="color: var(--danger); font-weight: bold;">Master Invert</label>
         </div>
 
         <div class="control-group divider">
             <label>Step (+%): </label>
             <input type="number" id="step-size" class="ui-num" step="0.0001" value="0.0001" style="width: 80px;">
-            <button id="apply-step-btn" style="background-color: var(--info);">Apply</button>
+            <button id="apply-step-btn" style="background-color: var(--primary);">Apply</button>
         </div>
 
         <div class="control-group divider">
@@ -83,12 +90,17 @@
 
     <script>
         let audioContext, analyser, microphone, stream, dataArray;
+        let outputGainNode, outGateOscillator, outGateShaper;
         let isRunning = false, animationId;
         
-        // Auto-Toggle State Variables
+        // Data Gate State (Math/Visuals)
         let autoToggleEnabled = false;
         let autoToggleMs = 100;
-        let sampleCounter = 0; // Tracks the passage of time via audio samples
+        let sampleCounter = 0;
+
+        // Speaker Output Gate State (Physical Audio)
+        let outGateEnabled = false;
+        let outGateMs = 100;
 
         const micBtn = document.getElementById('mic-btn');
         const numTracksInput = document.getElementById('num-tracks');
@@ -101,17 +113,23 @@
         const masterCanvas = document.getElementById('master-canvas');
         const masterCtx = masterCanvas.getContext('2d', { alpha: false });
         
-        // Auto-Toggle UI Listeners
-        const gateToggleBtn = document.getElementById('gate-enable-toggle');
-        const gateMsInput = document.getElementById('gate-ms');
-
-        gateToggleBtn.addEventListener('change', (e) => {
+        // Data Gate Listeners
+        document.getElementById('gate-enable-toggle').addEventListener('change', (e) => {
             autoToggleEnabled = e.target.checked;
-            sampleCounter = 0; // Reset timer
+            sampleCounter = 0;
         });
-        
-        gateMsInput.addEventListener('input', (e) => {
+        document.getElementById('gate-ms').addEventListener('input', (e) => {
             autoToggleMs = Math.max(0.1, parseFloat(e.target.value) || 100);
+        });
+
+        // Output Gate Listeners
+        document.getElementById('out-gate-enable-toggle').addEventListener('change', (e) => {
+            outGateEnabled = e.target.checked;
+            applySpeakerGate();
+        });
+        document.getElementById('out-gate-ms').addEventListener('input', (e) => {
+            outGateMs = Math.max(0.1, parseFloat(e.target.value) || 100);
+            if (outGateEnabled) applySpeakerGate();
         });
 
         let tracks = [];
@@ -164,14 +182,57 @@
             });
         });
 
+        // Dynamically connect/disconnect speaker output
         audioOutputToggle.addEventListener('change', (e) => {
-            if (!isRunning || !analyser || !audioContext) return;
-            e.target.checked ? analyser.connect(audioContext.destination) : analyser.disconnect(audioContext.destination);
+            if (!isRunning || !outputGainNode || !audioContext) return;
+            if (e.target.checked) {
+                outputGainNode.connect(audioContext.destination);
+            } else {
+                outputGainNode.disconnect();
+            }
         });
 
         echoToggle.addEventListener('change', () => {
             if (isRunning) { toggleMic(); setTimeout(toggleMic, 200); }
         });
+
+        // -------------------------------------------------------------
+        // HARDWARE SPEAKER GATE LOGIC
+        // -------------------------------------------------------------
+        function applySpeakerGate() {
+            if (!audioContext || !outputGainNode) return;
+
+            // Clean up previous oscillator
+            if (outGateOscillator) {
+                outGateOscillator.stop();
+                outGateOscillator.disconnect();
+            }
+
+            if (outGateEnabled) {
+                // A Square wave goes from -1 to 1.
+                outGateOscillator = audioContext.createOscillator();
+                outGateOscillator.type = 'square';
+                
+                // If cycle is 100ms On / 100ms Off, Total Period = 200ms. Freq = 1000 / 200 = 5Hz
+                outGateOscillator.frequency.value = 1000 / (2 * outGateMs);
+
+                // WaveShaper maps the Square Wave: -1 maps to 0 (Mute), +1 maps to 1 (Play)
+                outGateShaper = audioContext.createWaveShaper();
+                outGateShaper.curve = new Float32Array([0, 1]);
+
+                // Route Oscillator -> Shaper -> Gain Node Parameter
+                outGateOscillator.connect(outGateShaper);
+                
+                // Disconnect default value, let the Oscillator control the volume natively
+                outputGainNode.gain.value = 0; 
+                outGateShaper.connect(outputGainNode.gain);
+
+                outGateOscillator.start();
+            } else {
+                // If disabled, reset Speaker Output to 100% volume
+                outputGainNode.gain.value = 1.0;
+            }
+        }
 
         async function toggleMic() {
             if (isRunning) {
@@ -188,14 +249,21 @@
                 const useEcho = echoToggle.checked;
                 stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: useEcho, noiseSuppression: useEcho, autoGainControl: useEcho } });
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                analyser = audioContext.createAnalyser();
                 
+                analyser = audioContext.createAnalyser();
                 analyser.fftSize = 1024;
                 dataArray = new Float32Array(analyser.frequencyBinCount);
                 
+                // Setup Hardware Routing
                 microphone = audioContext.createMediaStreamSource(stream);
-                microphone.connect(analyser);
-                if (audioOutputToggle.checked) analyser.connect(audioContext.destination);
+                outputGainNode = audioContext.createGain();
+
+                microphone.connect(analyser);      // Mic -> Visualizer/Math Engine
+                microphone.connect(outputGainNode);// Mic -> Speaker Controller
+                
+                if (audioOutputToggle.checked) {
+                    outputGainNode.connect(audioContext.destination);
+                }
 
                 micBtn.innerText = 'Stop Microphone';
                 micBtn.classList.add('active');
@@ -205,6 +273,9 @@
                 masterCanvas.width = masterCanvas.clientWidth;
                 masterCanvas.height = masterCanvas.clientHeight;
 
+                // Initialize the physical Speaker Gate state
+                applySpeakerGate();
+                
                 processAudioMath();
             } catch (err) { alert('Error accessing microphone: ' + err); }
         }
@@ -216,14 +287,11 @@
 
             const dataLength = dataArray.length;
 
-            // 1. AUTO-TOGGLE (DIGITAL START/STOP GATE)
-            // Executes precisely down to 0.1ms using the audio sample rate
+            // 1. DATA GATE (Math/Visuals Only)
             if (autoToggleEnabled) {
                 const samplesPerMs = audioContext.sampleRate / 1000;
                 const toggleSamples = autoToggleMs * samplesPerMs;
-                
                 for (let i = 0; i < dataLength; i++) {
-                    // If we are in an "Odd" phase of the timer, the mic is mathematically "Stopped" (0)
                     if (Math.floor(sampleCounter / toggleSamples) % 2 !== 0) {
                         dataArray[i] = 0; 
                     }
@@ -231,7 +299,7 @@
                 }
             }
 
-            // 2. PURE MATH ENGINE (Runs 1,000 Tracks in Memory)
+            // 2. MATH ENGINE
             const globalPolarity = masterInvertToggle.checked ? -1 : 1;
             for (let t = 0; t < tracks.length; t++) {
                 const scaleMultiplier = tracks[t].scale / 100;
