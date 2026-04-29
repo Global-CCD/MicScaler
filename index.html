@@ -7,7 +7,7 @@
     <style>
         :root {
             --bg: #121212; --surface: #1e1e1e; --primary: #bb86fc;
-            --danger: #cf6679; --info: #03dac6; --warn: #ffb300; --text: #e0e0e0; --border: #333;
+            --danger: #cf6679; --info: #03dac6; --warn: #ffb300; --record: #ff1744; --text: #e0e0e0; --border: #333;
         }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .header { text-align: center; margin-bottom: 20px; width: 100%; max-width: 800px; }
@@ -20,7 +20,10 @@
         button { background-color: var(--primary); color: #000; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer; transition: 0.2s; }
         button:hover { opacity: 0.8; }
         button.active { background-color: var(--danger); }
+        button.record-active { background-color: var(--record); color: white; animation: pulse 1.5s infinite; }
         
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+
         .warning-text { color: var(--danger); font-size: 0.8em; margin-left: 5px; }
         
         #track-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; width: 100%; max-width: 1600px; margin-top: 10px; }
@@ -45,7 +48,7 @@
         <canvas id="master-canvas"></canvas>
     </div>
 
-    <!-- ROW 1: MATH & PROCESSING CONTROLS -->
+    <!-- ROW 1: MATH & PROCESSING -->
     <div class="controls">
         <button id="mic-btn">Start Microphone</button>
         
@@ -59,7 +62,6 @@
             <label style="color: var(--danger); font-weight: bold;">Master Invert</label>
         </div>
 
-        <!-- NEW: Pattern Invert -->
         <div class="control-group divider">
             <input type="checkbox" id="pattern-invert-toggle">
             <label style="color: var(--danger); font-weight: bold;">Invert Every:</label>
@@ -78,16 +80,14 @@
         </div>
     </div>
 
-    <!-- ROW 2: HARDWARE & GATING CONTROLS -->
+    <!-- ROW 2: HARDWARE & GATING -->
     <div class="controls">
-        <!-- Input Math Gate -->
         <div class="control-group" style="border: 1px solid var(--warn); padding: 5px 10px; border-radius: 4px;">
             <label title="Chops the data feeding into the 1000 tracks" style="color: var(--warn); font-weight:bold;">Math Gate (ms): </label>
             <input type="number" id="gate-ms" class="ui-num" min="0.1" max="1000" step="0.1" value="100" style="width: 65px;">
             <input type="checkbox" id="gate-enable-toggle"> <span style="font-size:0.9em;">Enable</span>
         </div>
 
-        <!-- Physical Speaker Output Gate -->
         <div class="control-group divider" style="border: 1px solid var(--primary); padding: 5px 10px; border-radius: 4px; margin-left: 10px;">
             <label title="Physically chops the sound playing from the speakers" style="color: var(--primary); font-weight:bold;">Speaker Gate (ms): </label>
             <input type="number" id="out-gate-ms" class="ui-num" min="0.1" max="1000" step="0.1" value="100" style="width: 65px;">
@@ -103,13 +103,34 @@
         </div>
     </div>
 
+    <!-- ROW 3: RECORDING & EXPORT -->
+    <div class="controls" style="border-color: var(--record);">
+        <button id="record-btn" style="background-color: var(--surface); border: 2px solid var(--record); color: white;">⏺ Start Recording</button>
+        
+        <div class="control-group divider">
+            <label style="color: var(--text);">Auto-Stop Limit (Minutes): </label>
+            <input type="number" id="record-limit-mins" class="ui-num" min="0.1" max="120" step="0.1" value="5" style="width: 60px;">
+        </div>
+
+        <div class="control-group divider">
+            <label>Format: </label>
+            <select id="record-format" class="ui-num">
+                <option value="wav">WAV (Uncompressed PCM)</option>
+                <option value="opus">OPUS (WebM)</option>
+                <option value="flac">FLAC (Lossless)</option>
+            </select>
+        </div>
+        
+        <div id="record-status" style="margin-left: 15px; color: var(--info); font-size: 0.9em; font-weight: bold;"></div>
+    </div>
+
     <div id="track-container"></div>
 
     <script>
         let audioContext, analyser, microphone, stream, dataArray;
         let isRunning = false, animationId;
         
-        // Output Audio Nodes
+        // Audio Nodes
         let outputGain, chopperOsc, chopperGain;
 
         // Auto-Toggle State Variables
@@ -117,22 +138,33 @@
         let inToggleMs = 100;
         let sampleCounter = 0; 
 
+        // --- RECORDING VARIABLES ---
+        let isRecording = false;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let recordTimeout = null;
+        let scriptProcessor = null; // Used for custom WAV PCM capture
+        let wavAudioBuffer = []; // Stores raw float data for WAV
+
         const micBtn = document.getElementById('mic-btn');
         const numTracksInput = document.getElementById('num-tracks');
         const audioOutputToggle = document.getElementById('audio-output-toggle');
         const echoToggle = document.getElementById('echo-toggle');
         const masterInvertToggle = document.getElementById('master-invert-toggle');
-        
-        // Pattern Invert Variables
         const patternInvertToggle = document.getElementById('pattern-invert-toggle');
         const patternInvertNth = document.getElementById('pattern-invert-nth');
-
         const applyStepBtn = document.getElementById('apply-step-btn');
         const stepSizeInput = document.getElementById('step-size');
         const trackContainer = document.getElementById('track-container');
         const masterCanvas = document.getElementById('master-canvas');
         const masterCtx = masterCanvas.getContext('2d', { alpha: false });
         
+        // Recording UI Listeners
+        const recordBtn = document.getElementById('record-btn');
+        const recordLimitInput = document.getElementById('record-limit-mins');
+        const recordFormatInput = document.getElementById('record-format');
+        const recordStatus = document.getElementById('record-status');
+
         // Input Gate UI Listeners
         document.getElementById('gate-enable-toggle').addEventListener('change', (e) => {
             inToggleEnabled = e.target.checked;
@@ -150,15 +182,15 @@
             if (!audioContext || !outputGain || !chopperOsc) return;
             const enabled = outGateToggleBtn.checked;
             const ms = Math.max(0.1, parseFloat(outGateMsInput.value) || 100);
-            const freq = 1000 / (2 * ms); // Convert Period to Frequency
+            const freq = 1000 / (2 * ms); 
 
             if (enabled) {
-                outputGain.gain.value = 0.5; // Base gain
+                outputGain.gain.value = 0.5; 
                 chopperOsc.frequency.setValueAtTime(freq, audioContext.currentTime);
                 try { chopperGain.connect(outputGain.gain); } catch(e){}
             } else {
                 try { chopperGain.disconnect(outputGain.gain); } catch(e){}
-                outputGain.gain.value = 1.0; // Restore full volume
+                outputGain.gain.value = 1.0; 
             }
         }
 
@@ -226,6 +258,7 @@
 
         async function toggleMic() {
             if (isRunning) {
+                if (isRecording) stopRecording(); // Force stop recording if mic is turned off
                 cancelAnimationFrame(animationId);
                 if (stream) stream.getTracks().forEach(track => track.stop());
                 if (audioContext) audioContext.close();
@@ -274,6 +307,143 @@
             } catch (err) { alert('Error accessing microphone: ' + err); }
         }
 
+        // --- RECORDING ENGINE ---
+        recordBtn.addEventListener('click', () => {
+            if (!isRunning) { alert("Please Start Microphone first!"); return; }
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        });
+
+        function startRecording() {
+            const format = recordFormatInput.value;
+            const limitMins = parseFloat(recordLimitInput.value) || 5;
+            const limitMs = limitMins * 60 * 1000;
+
+            isRecording = true;
+            recordBtn.innerText = '⏹ Stop Recording';
+            recordBtn.classList.add('record-active');
+            recordStatus.innerText = `Recording (${limitMins}m limit)...`;
+
+            // We record from OutputGain so Hardware Gate effects are captured
+            const dest = audioContext.createMediaStreamDestination();
+            outputGain.connect(dest);
+
+            if (format === 'wav') {
+                // Custom PCM-to-WAV Compiler
+                wavAudioBuffer = [];
+                scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+                dest.connect(scriptProcessor);
+                scriptProcessor.connect(audioContext.destination); // Required for SP to fire
+                
+                scriptProcessor.onaudioprocess = (e) => {
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    wavAudioBuffer.push(new Float32Array(inputData));
+                };
+            } else {
+                // OPUS or FLAC using MediaRecorder
+                let mimeType = format === 'flac' ? 'audio/flac' : 'audio/webm;codecs=opus';
+                
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    alert(`Your browser does not support native ${format.toUpperCase()} encoding. Falling back to OPUS.`);
+                    mimeType = 'audio/webm;codecs=opus';
+                    recordFormatInput.value = 'opus';
+                }
+
+                recordedChunks = [];
+                mediaRecorder = new MediaRecorder(dest.stream, { mimeType: mimeType });
+                
+                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+                mediaRecorder.onstop = () => exportMediaRecorderFile(mimeType);
+                mediaRecorder.start(100); // collect 100ms chunks
+            }
+
+            // Set the auto-stop timer
+            recordTimeout = setTimeout(() => {
+                if (isRecording) stopRecording();
+            }, limitMs);
+        }
+
+        function stopRecording() {
+            isRecording = false;
+            recordBtn.innerText = '⏺ Start Recording';
+            recordBtn.classList.remove('record-active');
+            recordStatus.innerText = 'Compiling audio file...';
+            clearTimeout(recordTimeout);
+
+            const format = recordFormatInput.value;
+
+            if (format === 'wav' && scriptProcessor) {
+                scriptProcessor.disconnect();
+                outputGain.disconnect(scriptProcessor);
+                compileWAVFile();
+            } else if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+            }
+        }
+
+        function exportMediaRecorderFile(mimeType) {
+            const blob = new Blob(recordedChunks, { type: mimeType });
+            const ext = mimeType.includes('flac') ? 'flac' : 'webm';
+            triggerDownload(blob, `MicScaler_Output.${ext}`);
+        }
+
+        function compileWAVFile() {
+            // Flatten Float32Array chunks
+            const totalLength = wavAudioBuffer.reduce((acc, arr) => acc + arr.length, 0);
+            const flattened = new Float32Array(totalLength);
+            let offset = 0;
+            for (let arr of wavAudioBuffer) {
+                flattened.set(arr, offset);
+                offset += arr.length;
+            }
+
+            // Build WAV Header
+            const sampleRate = audioContext.sampleRate;
+            const buffer = new ArrayBuffer(44 + flattened.length * 2);
+            const view = new DataView(buffer);
+
+            const writeString = (v, off, str) => { for (let i=0; i<str.length; i++) v.setUint8(off + i, str.charCodeAt(i)); };
+            
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + flattened.length * 2, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); // PCM
+            view.setUint16(22, 1, true); // Mono
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true); // 16-bit
+            writeString(view, 36, 'data');
+            view.setUint32(40, flattened.length * 2, true);
+
+            // Convert Float32 (-1 to 1) to Int16 PCM
+            let pcmOffset = 44;
+            for (let i = 0; i < flattened.length; i++, pcmOffset += 2) {
+                let s = Math.max(-1, Math.min(1, flattened[i]));
+                view.setInt16(pcmOffset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+
+            const blob = new Blob([view], { type: 'audio/wav' });
+            triggerDownload(blob, 'MicScaler_Output.wav');
+        }
+
+        function triggerDownload(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); recordStatus.innerText = "Saved successfully!"; }, 100);
+        }
+
+        // --- MATH RENDER LOOP ---
         function processAudioMath() {
             if (!isRunning) return;
             animationId = requestAnimationFrame(processAudioMath);
@@ -281,7 +451,6 @@
 
             const dataLength = dataArray.length;
 
-            // 1. MATH INPUT AUTO-TOGGLE
             if (inToggleEnabled) {
                 const samplesPerMs = audioContext.sampleRate / 1000;
                 const toggleSamples = inToggleMs * samplesPerMs;
@@ -291,31 +460,21 @@
                 }
             }
 
-            // Fetch global polarity settings (outside the loop for max performance)
             const globalPolarity = masterInvertToggle.checked ? -1 : 1;
             const patternEnabled = patternInvertToggle.checked;
             const patternN = parseInt(patternInvertNth.value);
 
-            // 2. PURE MATH ENGINE (Runs 1,000 Tracks in Memory)
             for (let t = 0; t < tracks.length; t++) {
                 const scaleMultiplier = tracks[t].scale / 100;
-                
-                // Calculate Pattern Polarity: Invert every Nth track
-                // (t + 1) ensures Track 2, 4, 6 etc. invert when "2nd" is selected
                 let patternPolarity = 1;
-                if (patternEnabled && ((t + 1) % patternN === 0)) {
-                    patternPolarity = -1;
-                }
-
-                // Final Net Polarity factors all 3 inversion layers
-                const netPolarity = globalPolarity * (tracks[t].invert ? -1 : 1) * patternPolarity;
+                if (patternEnabled && ((t + 1) % patternN === 0)) patternPolarity = -1;
                 
+                const netPolarity = globalPolarity * (tracks[t].invert ? -1 : 1) * patternPolarity;
                 for (let i = 0; i < dataLength; i++) {
                     const scaledDataOutput = dataArray[i] * scaleMultiplier * netPolarity;
                 }
             }
 
-            // 3. MASTER VISUALIZER
             masterCtx.fillStyle = '#000000';
             masterCtx.fillRect(0, 0, masterCanvas.width, masterCanvas.height);
             masterCtx.lineWidth = 2;
