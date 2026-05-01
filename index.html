@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MicScaler - 1000 Track Data Engine (AuraConv Edition)</title>
+    <title>MicScaler - 1000 Track Data Engine (v1.10.0)</title>
     <style>
         :root {
             --bg: #121212; --surface: #1e1e1e; --primary: #bb86fc;
@@ -49,7 +49,7 @@
         <canvas id="master-canvas"></canvas>
     </div>
 
-    <!-- ROW 1: MATH ENGINE -->
+    <!-- ROW 1: MATH ENGINE & AUTOMATION -->
     <div class="controls">
         <button id="mic-btn">Start Microphone</button>
         
@@ -77,7 +77,15 @@
         <div class="control-group divider">
             <label>Step (+%): </label>
             <input type="number" id="step-size" class="ui-num" step="0.0001" value="0.0001" style="width: 80px;">
-            <button id="apply-step-btn" style="background-color: var(--info);">Apply</button>
+            <button id="apply-step-btn" style="background-color: var(--primary); padding: 4px 8px; font-size: 0.85em;">Apply</button>
+        </div>
+
+        <!-- NEW: AUTO-STEP DESCENT SEQUENCE -->
+        <div class="control-group divider" style="border: 1px solid var(--info); padding: 5px 10px; border-radius: 4px;">
+            <label style="color: var(--info); font-weight: bold;" title="Automated sequence from 1% down to 0.0001%">Auto-Step Drop:</label>
+            <input type="number" id="auto-step-time" class="ui-num" min="1" max="600" value="15" style="width: 50px;">
+            <span style="font-size:0.8em; color:#aaa;">sec</span>
+            <button id="start-auto-step-btn" style="background-color: var(--info); padding: 4px 8px; font-size: 0.85em;">Start</button>
         </div>
     </div>
 
@@ -112,7 +120,7 @@
             <input type="checkbox" id="gate-enable-toggle"> <span style="font-size:0.9em;">Enable</span>
         </div>
 
-        <div class="control-group divider">
+        <div class="control-group divider" style="border: 1px solid var(--primary); padding: 5px 10px; border-radius: 4px; margin-left: 10px;">
             <label title="Physically chops the sound playing from the speakers" style="color: var(--warn); font-weight:bold;">Speaker Gate (ms): </label>
             <input type="number" id="out-gate-ms" class="ui-num" min="0.1" max="1000" step="0.1" value="100" style="width: 65px;">
             <input type="checkbox" id="out-gate-enable-toggle"> <span style="font-size:0.9em;">Enable</span>
@@ -153,17 +161,23 @@
     <script>
         let audioContext, analyser, microphone, stream, dataArray;
         let isRunning = false, animationId;
-        let globalSampleCounter = 0; // Absolute sample tracking for AuraConv
+        let globalSampleCounter = 0; 
         
         // Audio Nodes
-        let liveMathNode, keepAliveGain; // Sample-accurate DSP processor
-        let fxHubIn, fxHubOut, convolver, panner; // AuraConv Reverb/Spatial Nodes
-        let outputGain, chopperOsc, chopperGain; // Hardware gating
+        let liveMathNode, keepAliveGain; 
+        let fxHubIn, fxHubOut, convolver, panner; 
+        let outputGain, chopperOsc, chopperGain; 
+
+        // Auto-Toggle State Variables
+        let inToggleEnabled = false;
+        let inToggleMs = 100;
+        let sampleCounter = 0; 
 
         // Recording State
         let isRecording = false, mediaRecorder = null, recordedChunks =[], recordTimeout = null;
         let scriptProcessor = null, wavAudioBuffer =[]; 
 
+        // UI Element References
         const micBtn = document.getElementById('mic-btn');
         const numTracksInput = document.getElementById('num-tracks');
         const audioOutputToggle = document.getElementById('audio-output-toggle');
@@ -177,35 +191,15 @@
         const masterCanvas = document.getElementById('master-canvas');
         const masterCtx = masterCanvas.getContext('2d', { alpha: false });
         
+        // Output Gate Listeners
+        const outGateToggleBtn = document.getElementById('out-gate-enable-toggle');
+        const outGateMsInput = document.getElementById('out-gate-ms');
+
+        // Recording Listeners
         const recordBtn = document.getElementById('record-btn');
         const recordLimitInput = document.getElementById('record-limit-mins');
         const recordFormatInput = document.getElementById('record-format');
         const recordStatus = document.getElementById('record-status');
-
-        const outGateToggleBtn = document.getElementById('out-gate-enable-toggle');
-        const outGateMsInput = document.getElementById('out-gate-ms');
-
-        // AuraConv Routing Triggers
-        document.getElementById('ac-reverb').addEventListener('change', updateFXRouting);
-        document.getElementById('ac-rotate').addEventListener('change', updateFXRouting);
-
-        function updateOutputGate() {
-            if (!audioContext || !outputGain || !chopperOsc) return;
-            const enabled = outGateToggleBtn.checked;
-            const ms = Math.max(0.1, parseFloat(outGateMsInput.value) || 100);
-            const freq = 1000 / (2 * ms); 
-            if (enabled) {
-                outputGain.gain.value = 0.5; 
-                chopperOsc.frequency.setValueAtTime(freq, audioContext.currentTime);
-                try { chopperGain.connect(outputGain.gain); } catch(e){}
-            } else {
-                try { chopperGain.disconnect(outputGain.gain); } catch(e){}
-                outputGain.gain.value = 1.0; 
-            }
-        }
-
-        outGateToggleBtn.addEventListener('change', updateOutputGate);
-        outGateMsInput.addEventListener('input', updateOutputGate);
 
         let tracks =[];
 
@@ -239,6 +233,7 @@
             }
         }
 
+        // STATIC APPLY BUTTON
         applyStepBtn.addEventListener('click', () => {
             if (tracks.length === 0) return;
             const stepValue = parseFloat(stepSizeInput.value) || 0;
@@ -251,16 +246,109 @@
             });
         });
 
+        // --- AUTOMATED DESCENDING STEP SEQUENCE ---
+        let autoStepActive = false;
+        let autoStepStartTime = 0;
+        let autoStepDurationMs = 15000;
+        let autoStepAnimId;
+        let lastDomUpdate = 0;
+
+        const startAutoStepBtn = document.getElementById('start-auto-step-btn');
+        const autoStepTimeInput = document.getElementById('auto-step-time');
+
+        startAutoStepBtn.addEventListener('click', () => {
+            if (autoStepActive) {
+                // Stop early
+                autoStepActive = false;
+                cancelAnimationFrame(autoStepAnimId);
+                startAutoStepBtn.innerText = 'Start';
+                startAutoStepBtn.style.backgroundColor = 'var(--info)';
+                return;
+            }
+
+            // Start the sequence
+            autoStepDurationMs = (parseFloat(autoStepTimeInput.value) || 15) * 1000;
+            autoStepStartTime = 0;
+            autoStepActive = true;
+            startAutoStepBtn.innerText = 'Stop';
+            startAutoStepBtn.style.backgroundColor = 'var(--danger)';
+            autoStepAnimId = requestAnimationFrame(runAutoStepDrop);
+        });
+
+        function runAutoStepDrop(timestamp) {
+            if (!autoStepActive) return;
+            if (!autoStepStartTime) autoStepStartTime = timestamp;
+            
+            const elapsed = timestamp - autoStepStartTime;
+            let progress = elapsed / autoStepDurationMs;
+
+            if (progress >= 1.0) {
+                progress = 1.0;
+                autoStepActive = false;
+                startAutoStepBtn.innerText = 'Start';
+                startAutoStepBtn.style.backgroundColor = 'var(--info)';
+            }
+
+            // Exponential Interpolation (Logarithmic sweep from 1.0 to 0.0001)
+            // This ensures smooth perceptual descent through micro-fractions
+            const currentStep = 1.0 * Math.pow((0.0001 / 1.0), progress);
+            
+            // Apply to memory array immediately (Safe at 60fps)
+            if (tracks.length > 0) {
+                const baseScale = tracks[0].scale; 
+                for (let i = 0; i < tracks.length; i++) {
+                    tracks[i].scale = baseScale + (i * currentStep);
+                }
+            }
+
+            // UI Throttle: Only update the 1,000 DOM inputs every 100ms (10fps) to prevent audio clicks
+            if (timestamp - lastDomUpdate > 100 || progress === 1.0) {
+                stepSizeInput.value = currentStep.toFixed(4);
+                for (let i = 0; i < tracks.length; i++) {
+                    const inputEl = document.getElementById(`scale-input-${i}`);
+                    if (inputEl) inputEl.value = tracks[i].scale.toFixed(4);
+                }
+                lastDomUpdate = timestamp;
+            }
+
+            if (autoStepActive) {
+                autoStepAnimId = requestAnimationFrame(runAutoStepDrop);
+            }
+        }
+        // ------------------------------------------
+
+        // Gate & AuraConv Routing
+        document.getElementById('gate-enable-toggle').addEventListener('change', (e) => { inToggleEnabled = e.target.checked; sampleCounter = 0; });
+        document.getElementById('gate-ms').addEventListener('input', (e) => { inToggleMs = Math.max(0.1, parseFloat(e.target.value) || 100); });
+        
+        function updateOutputGate() {
+            if (!audioContext || !outputGain || !chopperOsc) return;
+            const enabled = outGateToggleBtn.checked;
+            const ms = Math.max(0.1, parseFloat(outGateMsInput.value) || 100);
+            const freq = 1000 / (2 * ms); 
+            if (enabled) {
+                outputGain.gain.value = 0.5; 
+                chopperOsc.frequency.setValueAtTime(freq, audioContext.currentTime);
+                try { chopperGain.connect(outputGain.gain); } catch(e){}
+            } else {
+                try { chopperGain.disconnect(outputGain.gain); } catch(e){}
+                outputGain.gain.value = 1.0; 
+            }
+        }
+
+        outGateToggleBtn.addEventListener('change', updateOutputGate);
+        outGateMsInput.addEventListener('input', updateOutputGate);
+
+        document.getElementById('ac-reverb').addEventListener('change', updateFXRouting);
+        document.getElementById('ac-rotate').addEventListener('change', updateFXRouting);
+
         audioOutputToggle.addEventListener('change', (e) => {
             if (!isRunning || !outputGain || !audioContext) return;
             e.target.checked ? outputGain.connect(audioContext.destination) : outputGain.disconnect(audioContext.destination);
         });
 
-        echoToggle.addEventListener('change', () => {
-            if (isRunning) { toggleMic(); setTimeout(toggleMic, 200); }
-        });
+        echoToggle.addEventListener('change', () => { if (isRunning) { toggleMic(); setTimeout(toggleMic, 200); }});
 
-        // Generates an exponential white noise impulse for AuraConv Reverb
         function generateImpulseResponse(ctx) {
             const sampleRate = ctx.sampleRate;
             const length = sampleRate * 2.0; 
@@ -274,7 +362,6 @@
             return impulse;
         }
 
-        // Dynamically patches AuraConv Reverb and Panner into the live signal chain
         function updateFXRouting() {
             if (!audioContext) return;
             try { fxHubIn.disconnect(); } catch(e){}
@@ -306,7 +393,6 @@
                 
                 microphone = audioContext.createMediaStreamSource(stream);
 
-                // --- THE SAMPLE-ACCURATE DSP NODE (MATH GATE & AURACONV) ---
                 liveMathNode = audioContext.createScriptProcessor(1024, 1, 1);
                 liveMathNode.onaudioprocess = (e) => {
                     const input = e.inputBuffer.getChannelData(0);
@@ -332,7 +418,6 @@
                     }
                 };
 
-                // Node routing
                 analyser = audioContext.createAnalyser();
                 analyser.fftSize = 1024;
                 dataArray = new Float32Array(analyser.frequencyBinCount);
@@ -342,19 +427,16 @@
                 outputGain = audioContext.createGain();
                 outputGain.gain.value = 1.0;
 
-                // Build AuraConv FX Nodes
                 convolver = audioContext.createConvolver();
                 convolver.buffer = generateImpulseResponse(audioContext);
                 panner = audioContext.createPanner();
                 panner.panningModel = 'HRTF';
                 
-                // Keep-Alive for ScriptProcessor (Requires destination connection to reliably fire in Chrome)
                 keepAliveGain = audioContext.createGain();
                 keepAliveGain.gain.value = 0;
                 liveMathNode.connect(keepAliveGain);
                 keepAliveGain.connect(audioContext.destination);
 
-                // Hardware Chopper
                 chopperOsc = audioContext.createOscillator();
                 chopperOsc.type = 'square';
                 chopperGain = audioContext.createGain();
@@ -362,7 +444,6 @@
                 chopperOsc.connect(chopperGain);
                 chopperOsc.start();
 
-                // Core Graph Connection
                 microphone.connect(liveMathNode);
                 liveMathNode.connect(analyser);
                 analyser.connect(fxHubIn);
@@ -475,16 +556,14 @@
             setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); recordStatus.innerText = "Saved successfully!"; }, 100);
         }
 
-        // --- MATH RENDER & 3D ROTATION LOOP ---
         function processAudioMath() {
             if (!isRunning) return;
             animationId = requestAnimationFrame(processAudioMath);
             analyser.getFloatTimeDomainData(dataArray);
             
-            // AuraConv HRTF 3D Rotation Animation
             if (document.getElementById('ac-rotate').checked && panner) {
                 const t = audioContext.currentTime;
-                panner.positionX.setValueAtTime(Math.sin(t * 2.0) * 2, t); // Circular rotation radius 2
+                panner.positionX.setValueAtTime(Math.sin(t * 2.0) * 2, t);
                 panner.positionZ.setValueAtTime(Math.cos(t * 2.0) * 2, t);
             }
 
@@ -493,7 +572,7 @@
             const patternEnabled = patternInvertToggle.checked;
             const patternN = parseInt(patternInvertNth.value);
 
-            // 1,000 Track Math Engine
+            // Core Math
             for (let t = 0; t < tracks.length; t++) {
                 const scaleMultiplier = tracks[t].scale / 100;
                 let patternPolarity = 1;
@@ -505,7 +584,6 @@
                 }
             }
 
-            // Master Visualizer
             masterCtx.fillStyle = '#000000';
             masterCtx.fillRect(0, 0, masterCanvas.width, masterCanvas.height);
             masterCtx.lineWidth = 2;
