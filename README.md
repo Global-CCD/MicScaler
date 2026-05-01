@@ -37,6 +37,11 @@ The second control row is entirely dedicated to integrating AuraConv's mechanics
 *   **Synthetic Convolution Reverb:** We generate a mathematical 2-second white-noise exponential decay array to smear the chopped transients without relying on external `.wav` Impulse Responses.
 *   **HRTF 3D Rotation:** Real-time spatial rotation utilizing Web Audio's `PannerNode`, rotating the chopped bursts around your head at 2.0 radians per second.
 
+## 🎛️ The Sequence Automation Engine
+In addition to the static "Apply Step" feature, MicScaler now includes a time-based automation envelope.
+*   **Logarithmic Descent:** When activated, the engine applies an exponential/logarithmic calculation across the timeline. This ensures that the descent through microscopic fractions (e.g., from `0.01` to `0.0001`) feels mathematically linear to the ear and signal path.
+*   **Throttled DOM Handling:** Updating 1,000 visual inputs 60 times a second creates severe lag in standard browsers. The Auto-Step engine solves this by decoupling the math from the UI. The memory array processes the descent at native audio-rates, while the HTML text boxes are cleanly throttled to update at 10 frames per second.
+
 ## ✨ Key Features
 *   **1,000-Channel Throughput:** Optimized to perform over 500,000+ multiplicative math operations per animation frame.
 *   **Pattern-Based Inversion:** Automatically invert every 2nd, 3rd, 4th, or 5th track.
