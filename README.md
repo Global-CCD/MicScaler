@@ -37,11 +37,11 @@ The second control row is entirely dedicated to integrating AuraConv's mechanics
 *   **Synthetic Convolution Reverb:** We generate a mathematical 2-second white-noise exponential decay array to smear the chopped transients without relying on external `.wav` Impulse Responses.
 *   **HRTF 3D Rotation:** Real-time spatial rotation utilizing Web Audio's `PannerNode`, rotating the chopped bursts around your head at 2.0 radians per second.
 
-## 🎛️ The Sequence Automation Engine (LFO)
-In addition to the static "Apply Step" feature, MicScaler now acts as an infinite Low-Frequency Oscillator (LFO) controlling the step size of your array.
-*   **Infinite Looping:** Set your cycle duration (e.g., 15 seconds) and click Start. The math engine will descend logarithmically to `0.0001%`, then seamlessly reset back to `1.0%` to repeat the cycle indefinitely.
-*   **Logarithmic Descent:** Because descending linearly through decimals causes uneven perceptual shifts, the engine uses exponential decay to guarantee a perfectly smooth sweep through the fractional spectrum.
-*   **Throttled DOM Handling:** Updating 1,000 visual inputs 60 times a second creates severe lag in standard browsers. The Auto-Step engine solves this by decoupling the math from the UI. The memory array processes the descent at native audio-rates, while the HTML text boxes are cleanly throttled to update at 10 frames per second.
+## 🎛️ The Sequence Automation Engine (Custom LFO)
+The LFO engine has been upgraded to support user-defined boundaries and bi-directional sweeping.
+*   **Custom High/Low Bounds:** You can now explicitly set the `Start` and `End` values of the sweep. 
+*   **Bi-Directional Math:** The exponential decay engine gracefully handles both descending loops (e.g., Start: `1.0`, End: `0.0001`) and ascending loops (e.g., Start: `0.0001`, End: `1.0`). 
+*   **Live Injection:** The math processor reads the boundary inputs dynamically. You can change the High and Low targets *while* the loop is running without needing to stop or restart the sequence.
 
 ## ✨ Key Features
 *   **1,000-Channel Throughput:** Optimized to perform over 500,000+ multiplicative math operations per animation frame.

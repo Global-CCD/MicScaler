@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MicScaler - 1000 Track Data Engine (v1.11.0)</title>
+    <title>MicScaler - 1000 Track Data Engine (v1.12.0)</title>
     <style>
         :root {
             --bg: #121212; --surface: #1e1e1e; --primary: #bb86fc;
@@ -75,17 +75,24 @@
         </div>
 
         <div class="control-group divider">
-            <label>Step (+%): </label>
+            <label>Static Step (+%): </label>
             <input type="number" id="step-size" class="ui-num" step="0.0001" value="0.0001" style="width: 80px;">
             <button id="apply-step-btn" style="background-color: var(--primary); padding: 4px 8px; font-size: 0.85em;">Apply</button>
         </div>
 
-        <!-- AUTO-STEP DESCENT SEQUENCE -->
+        <!-- NEW: DYNAMIC CUSTOM BOUNDARIES FOR AUTO-STEP -->
         <div class="control-group divider" style="border: 1px solid var(--info); padding: 5px 10px; border-radius: 4px;">
-            <label style="color: var(--info); font-weight: bold;" title="Automated looping sequence from 1% down to 0.0001%">Auto-Step Loop:</label>
+            <label style="color: var(--info); font-weight: bold;" title="Automated looping sequence">Auto-Step LFO:</label>
+            <label style="font-size: 0.9em; margin-left: 5px;">Start:</label>
+            <input type="number" id="auto-step-high" class="ui-num" step="0.0001" value="1.0" style="width: 60px;" title="Starting step value">
+            
+            <label style="font-size: 0.9em; margin-left: 5px;">End:</label>
+            <input type="number" id="auto-step-low" class="ui-num" step="0.0001" value="0.0001" style="width: 75px;" title="Ending step value">
+            
+            <label style="font-size: 0.9em; margin-left: 5px;">Time:</label>
             <input type="number" id="auto-step-time" class="ui-num" min="1" max="600" value="15" style="width: 50px;">
             <span style="font-size:0.8em; color:#aaa;">sec</span>
-            <button id="start-auto-step-btn" style="background-color: var(--info); padding: 4px 8px; font-size: 0.85em;">Start</button>
+            <button id="start-auto-step-btn" style="background-color: var(--info); padding: 4px 8px; font-size: 0.85em; margin-left: 5px;">Start</button>
         </div>
     </div>
 
@@ -246,7 +253,7 @@
             });
         });
 
-        // --- AUTOMATED LOOPING DESCENDING STEP SEQUENCE ---
+        // --- AUTOMATED LOOPING CUSTOM BOUNDARY LFO ---
         let autoStepActive = false;
         let autoStepStartTime = 0;
         let autoStepDurationMs = 15000;
@@ -255,10 +262,11 @@
 
         const startAutoStepBtn = document.getElementById('start-auto-step-btn');
         const autoStepTimeInput = document.getElementById('auto-step-time');
+        const autoStepHighInput = document.getElementById('auto-step-high');
+        const autoStepLowInput = document.getElementById('auto-step-low');
 
         startAutoStepBtn.addEventListener('click', () => {
             if (autoStepActive) {
-                // Stop the loop
                 autoStepActive = false;
                 cancelAnimationFrame(autoStepAnimId);
                 startAutoStepBtn.innerText = 'Start';
@@ -266,9 +274,8 @@
                 return;
             }
 
-            // Start the infinite sequence loop
             autoStepDurationMs = (parseFloat(autoStepTimeInput.value) || 15) * 1000;
-            autoStepStartTime = 0; // Will be set on first frame
+            autoStepStartTime = 0; 
             autoStepActive = true;
             startAutoStepBtn.innerText = 'Stop';
             startAutoStepBtn.style.backgroundColor = 'var(--danger)';
@@ -281,18 +288,22 @@
             
             let elapsed = timestamp - autoStepStartTime;
 
-            // LOOP LOGIC: Once the duration finishes, reset the timer to loop endlessly
+            // LOOP LOGIC: Shift start time cleanly to prevent drift
             if (elapsed >= autoStepDurationMs) {
-                autoStepStartTime += autoStepDurationMs; // Shift start time cleanly to prevent drift
+                autoStepStartTime += autoStepDurationMs; 
                 elapsed = timestamp - autoStepStartTime;
             }
 
             let progress = elapsed / autoStepDurationMs;
 
-            // Exponential Interpolation (Logarithmic sweep from 1.0 to 0.0001)
-            const currentStep = 1.0 * Math.pow((0.0001 / 1.0), progress);
+            // Fetch dynamic boundaries (allows user to change them while loop is running)
+            // Math.max guarantees we never divide by exactly 0 or calculate log(0)
+            const highVal = Math.max(0.000001, parseFloat(autoStepHighInput.value) || 1.0);
+            const lowVal = Math.max(0.000001, parseFloat(autoStepLowInput.value) || 0.0001);
+
+            // Exponential Interpolation formula works for both ascending and descending
+            const currentStep = highVal * Math.pow((lowVal / highVal), progress);
             
-            // Apply to memory array immediately (Safe at 60fps)
             if (tracks.length > 0) {
                 const baseScale = tracks[0].scale; 
                 for (let i = 0; i < tracks.length; i++) {
@@ -300,7 +311,7 @@
                 }
             }
 
-            // UI Throttle: Only update the 1,000 DOM inputs every 100ms (10fps) to prevent audio clicks
+            // UI Throttle: update DOM inputs every 100ms
             if (timestamp - lastDomUpdate > 100) {
                 stepSizeInput.value = currentStep.toFixed(4);
                 for (let i = 0; i < tracks.length; i++) {
@@ -310,7 +321,6 @@
                 lastDomUpdate = timestamp;
             }
 
-            // Re-call the animation frame indefinitely while active
             if (autoStepActive) {
                 autoStepAnimId = requestAnimationFrame(runAutoStepDrop);
             }
