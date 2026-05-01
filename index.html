@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MicScaler - 1000 Track Data Engine (v1.10.0)</title>
+    <title>MicScaler - 1000 Track Data Engine (v1.11.0)</title>
     <style>
         :root {
             --bg: #121212; --surface: #1e1e1e; --primary: #bb86fc;
@@ -80,9 +80,9 @@
             <button id="apply-step-btn" style="background-color: var(--primary); padding: 4px 8px; font-size: 0.85em;">Apply</button>
         </div>
 
-        <!-- NEW: AUTO-STEP DESCENT SEQUENCE -->
+        <!-- AUTO-STEP DESCENT SEQUENCE -->
         <div class="control-group divider" style="border: 1px solid var(--info); padding: 5px 10px; border-radius: 4px;">
-            <label style="color: var(--info); font-weight: bold;" title="Automated sequence from 1% down to 0.0001%">Auto-Step Drop:</label>
+            <label style="color: var(--info); font-weight: bold;" title="Automated looping sequence from 1% down to 0.0001%">Auto-Step Loop:</label>
             <input type="number" id="auto-step-time" class="ui-num" min="1" max="600" value="15" style="width: 50px;">
             <span style="font-size:0.8em; color:#aaa;">sec</span>
             <button id="start-auto-step-btn" style="background-color: var(--info); padding: 4px 8px; font-size: 0.85em;">Start</button>
@@ -246,7 +246,7 @@
             });
         });
 
-        // --- AUTOMATED DESCENDING STEP SEQUENCE ---
+        // --- AUTOMATED LOOPING DESCENDING STEP SEQUENCE ---
         let autoStepActive = false;
         let autoStepStartTime = 0;
         let autoStepDurationMs = 15000;
@@ -258,7 +258,7 @@
 
         startAutoStepBtn.addEventListener('click', () => {
             if (autoStepActive) {
-                // Stop early
+                // Stop the loop
                 autoStepActive = false;
                 cancelAnimationFrame(autoStepAnimId);
                 startAutoStepBtn.innerText = 'Start';
@@ -266,9 +266,9 @@
                 return;
             }
 
-            // Start the sequence
+            // Start the infinite sequence loop
             autoStepDurationMs = (parseFloat(autoStepTimeInput.value) || 15) * 1000;
-            autoStepStartTime = 0;
+            autoStepStartTime = 0; // Will be set on first frame
             autoStepActive = true;
             startAutoStepBtn.innerText = 'Stop';
             startAutoStepBtn.style.backgroundColor = 'var(--danger)';
@@ -279,18 +279,17 @@
             if (!autoStepActive) return;
             if (!autoStepStartTime) autoStepStartTime = timestamp;
             
-            const elapsed = timestamp - autoStepStartTime;
-            let progress = elapsed / autoStepDurationMs;
+            let elapsed = timestamp - autoStepStartTime;
 
-            if (progress >= 1.0) {
-                progress = 1.0;
-                autoStepActive = false;
-                startAutoStepBtn.innerText = 'Start';
-                startAutoStepBtn.style.backgroundColor = 'var(--info)';
+            // LOOP LOGIC: Once the duration finishes, reset the timer to loop endlessly
+            if (elapsed >= autoStepDurationMs) {
+                autoStepStartTime += autoStepDurationMs; // Shift start time cleanly to prevent drift
+                elapsed = timestamp - autoStepStartTime;
             }
 
+            let progress = elapsed / autoStepDurationMs;
+
             // Exponential Interpolation (Logarithmic sweep from 1.0 to 0.0001)
-            // This ensures smooth perceptual descent through micro-fractions
             const currentStep = 1.0 * Math.pow((0.0001 / 1.0), progress);
             
             // Apply to memory array immediately (Safe at 60fps)
@@ -302,7 +301,7 @@
             }
 
             // UI Throttle: Only update the 1,000 DOM inputs every 100ms (10fps) to prevent audio clicks
-            if (timestamp - lastDomUpdate > 100 || progress === 1.0) {
+            if (timestamp - lastDomUpdate > 100) {
                 stepSizeInput.value = currentStep.toFixed(4);
                 for (let i = 0; i < tracks.length; i++) {
                     const inputEl = document.getElementById(`scale-input-${i}`);
@@ -311,6 +310,7 @@
                 lastDomUpdate = timestamp;
             }
 
+            // Re-call the animation frame indefinitely while active
             if (autoStepActive) {
                 autoStepAnimId = requestAnimationFrame(runAutoStepDrop);
             }
